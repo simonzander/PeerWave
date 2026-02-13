@@ -208,7 +208,7 @@ class SessionAuthService {
       // Try up to 3 times with exponential backoff
       for (int attempt = 1; attempt <= 3; attempt++) {
         try {
-          final response = await ApiService.post(
+          final response = await ApiService.instance.post(
             '/auth/token/refresh',
             data: {'clientId': clientId, 'refreshToken': refreshToken},
           );

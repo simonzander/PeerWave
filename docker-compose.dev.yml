@@ -17,7 +17,7 @@ services:
       - ./livekit-certs:/certs  # Provide your own certs here, or auto-generated on first run
     environment:
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
-      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-devkey_secret_token_32chars_min}
     
     # Auto-generate self-signed certificates on first startup
     entrypoint: >
@@ -67,7 +67,7 @@ services:
       - DB_PATH=/usr/src/app/data/peerwave.sqlite
       # LiveKit Config
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
-      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-devkey_secret_token_32chars_min}
       - LIVEKIT_URL=${LIVEKIT_URL:-ws://peerwave-livekit:7880}
       - LIVEKIT_TURN_DOMAIN=${LIVEKIT_TURN_DOMAIN:-localhost}
       # Email Configuration

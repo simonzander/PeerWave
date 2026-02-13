@@ -499,7 +499,7 @@ roleRoutes.delete('/users/:userId', verifyAuthEither, requireAuth, requirePermis
         await writeQueue.enqueue(
             async () => {
                 // Delete all related records before deleting user
-                const { Client, SignalPreKey, SignalSignedPreKey, SignalSenderKey, 
+                const { Client, SignalPreKey, SignalSignedPreKey,
                         GroupItem, GroupItemRead, ChannelMembers, Channel, 
                         ClientSession, Item } = require('../db/model');
                 
@@ -518,10 +518,10 @@ roleRoutes.delete('/users/:userId', verifyAuthEither, requireAuth, requirePermis
                 const clientIds = userClients.map(c => c.clientid);
                 
                 // 5. Delete all Signal Protocol keys for user's clients
+                // Note: SenderKeys removed - not stored on server per Signal Protocol
                 if (clientIds.length > 0) {
                     await SignalPreKey.destroy({ where: { client: clientIds } });
                     await SignalSignedPreKey.destroy({ where: { client: clientIds } });
-                    await SignalSenderKey.destroy({ where: { client: clientIds } });
                     await ClientSession.destroy({ where: { client_id: clientIds } });
                 }
                 
@@ -632,11 +632,15 @@ roleRoutes.delete('/users/:userId/channels/:channelId/roles/:roleId', verifyAuth
 roleRoutes.get('/channels/:channelId/members', verifyAuthEither, requireAuth, async (req, res) => {
     try {
         const { channelId } = req.params;
+        const userId = req.session.uuid;
         
-        // Check if user has permission to view channel members
-        const canView = await hasChannelPermission(req.session.uuid, channelId, 'member.view');
-        if (!canView) {
-            return res.status(403).json({ error: 'Forbidden: Cannot view channel members' });
+        // Check if user is a member of the channel (required for E2EE key exchange)
+        const isMember = await ChannelMembers.findOne({
+            where: { userId, channelId }
+        });
+        
+        if (!isMember) {
+            return res.status(403).json({ error: 'Forbidden: Not a member of this channel' });
         }
         
         // Get channel

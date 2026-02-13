@@ -4,16 +4,14 @@ import '../screens/admin/user_management_screen.dart';
 import 'api_service.dart';
 
 class UserManagementService {
-  final Dio _dio;
-
-  UserManagementService() : _dio = ApiService.dio {
-    ApiService.init();
+  UserManagementService() {
+    ApiService.instance.init();
   }
 
   /// Get all users
   Future<List<UserInfo>> getUsers() async {
     try {
-      final response = await _dio.get('/api/users');
+      final response = await ApiService.instance.get('/api/users');
 
       if (response.statusCode == 200) {
         final data = response.data;
@@ -32,7 +30,7 @@ class UserManagementService {
   /// Get all server roles
   Future<List<Role>> getServerRoles() async {
     try {
-      final response = await _dio.get('/api/roles?scope=server');
+      final response = await ApiService.instance.get('/api/roles?scope=server');
 
       if (response.statusCode == 200) {
         final data = response.data;
@@ -51,7 +49,9 @@ class UserManagementService {
   /// Get roles for a specific user
   Future<List<Role>> getUserRoles(String userId) async {
     try {
-      final response = await _dio.get('/api/users/$userId/roles');
+      final response = await ApiService.instance.get(
+        '/api/users/$userId/roles',
+      );
 
       if (response.statusCode == 200) {
         final data = response.data;
@@ -70,7 +70,7 @@ class UserManagementService {
   /// Assign a server role to a user
   Future<void> assignServerRole(String userId, String roleId) async {
     try {
-      final response = await _dio.post(
+      final response = await ApiService.instance.post(
         '/api/users/$userId/roles',
         data: {'roleId': roleId},
       );
@@ -86,7 +86,9 @@ class UserManagementService {
   /// Remove a server role from a user
   Future<void> removeServerRole(String userId, String roleId) async {
     try {
-      final response = await _dio.delete('/api/users/$userId/roles/$roleId');
+      final response = await ApiService.instance.delete(
+        '/api/users/$userId/roles/$roleId',
+      );
 
       if (response.statusCode != 200) {
         throw Exception('Failed to remove role: ${response.statusCode}');
@@ -99,7 +101,9 @@ class UserManagementService {
   /// Deactivate a user
   Future<void> deactivateUser(String userId) async {
     try {
-      final response = await _dio.patch('/api/users/$userId/deactivate');
+      final response = await ApiService.instance.patch(
+        '/api/users/$userId/deactivate',
+      );
 
       if (response.statusCode != 200) {
         throw Exception('Failed to deactivate user: ${response.statusCode}');
@@ -112,7 +116,9 @@ class UserManagementService {
   /// Activate a user
   Future<void> activateUser(String userId) async {
     try {
-      final response = await _dio.patch('/api/users/$userId/activate');
+      final response = await ApiService.instance.patch(
+        '/api/users/$userId/activate',
+      );
 
       if (response.statusCode != 200) {
         throw Exception('Failed to activate user: ${response.statusCode}');
@@ -125,7 +131,7 @@ class UserManagementService {
   /// Delete a user
   Future<void> deleteUser(String userId) async {
     try {
-      final response = await _dio.delete('/api/users/$userId');
+      final response = await ApiService.instance.delete('/api/users/$userId');
 
       if (response.statusCode != 200) {
         throw Exception('Failed to delete user: ${response.statusCode}');

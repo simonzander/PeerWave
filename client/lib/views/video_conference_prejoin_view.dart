@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart';
 import '../services/video_conference_service.dart';
-import '../services/signal_service.dart';
-import '../services/api_service.dart';
+import '../services/server_settings_service.dart';
 import '../services/call_service.dart';
 import '../services/socket_service.dart'
     if (dart.library.io) '../services/socket_service_native.dart';
@@ -51,6 +50,7 @@ class _VideoConferencePreJoinViewState
   bool _isFirstParticipant = false;
   int _participantCount = 0;
   bool _isCheckingParticipants = true;
+  List<String> _activeParticipantIds = [];
 
   // E2EE Key Exchange
   bool _hasE2EEKey = false;
@@ -81,7 +81,7 @@ class _VideoConferencePreJoinViewState
       debugPrint('[PreJoin] Channel: ${widget.channelId}');
 
       // Step 0: Check socket connection status
-      final socketConnected = SocketService().isConnected;
+      final socketConnected = SocketService.instance.isConnected;
       debugPrint('[PreJoin] Socket connected: $socketConnected');
 
       if (!socketConnected) {
@@ -90,12 +90,12 @@ class _VideoConferencePreJoinViewState
         );
         // Wait up to 5 seconds for socket to connect
         int attempts = 0;
-        while (!SocketService().isConnected && attempts < 50) {
+        while (!SocketService.instance.isConnected && attempts < 50) {
           await Future.delayed(Duration(milliseconds: 100));
           attempts++;
         }
 
-        if (!SocketService().isConnected) {
+        if (!SocketService.instance.isConnected) {
           debugPrint('[PreJoin] ❌ Socket connection timeout after 5 seconds');
           if (mounted) {
             context.showErrorSnackBar(
@@ -109,8 +109,10 @@ class _VideoConferencePreJoinViewState
       }
 
       // Check user authentication status
-      final userId = SignalService.instance.currentUserId;
-      final deviceId = SignalService.instance.currentDeviceId;
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClientWithStoredCredentials();
+      final userId = signalClient.getCurrentUserId();
+      final deviceId = signalClient.getCurrentDeviceId();
       debugPrint('[PreJoin] User authentication status:');
       debugPrint('[PreJoin]   - userId: $userId');
       debugPrint('[PreJoin]   - deviceId: $deviceId');
@@ -129,10 +131,12 @@ class _VideoConferencePreJoinViewState
         );
       }
 
+      videoService.resetE2EEState(channelId: widget.channelId, force: true);
+
       // Step 1: Ensure Signal Service is initialized (should already be initialized by app startup)
-      if (!SignalService.instance.isInitialized) {
+      if (!signalClient.isInitialized) {
         debugPrint(
-          '[PreJoin] ⚠️ Signal Service not initialized! This should not happen.',
+          '[PreJoin] ⚠️ Signal Client not initialized! This should not happen.',
         );
         if (mounted) {
           context.showErrorSnackBar(
@@ -144,6 +148,7 @@ class _VideoConferencePreJoinViewState
 
       // Step 2: Load available media devices
       await _loadMediaDevices();
+      if (!mounted) return;
 
       // For 1:1 instant calls as initiator, skip participant checking and sender key loading
       // The call doesn't exist yet, so we're always first
@@ -162,23 +167,34 @@ class _VideoConferencePreJoinViewState
       } else {
         // Step 3: Register as participant (enters "waiting room")
         await _registerAsParticipant();
+        if (!mounted) return;
 
         // Step 4: Check if first participant
         await _checkParticipantStatus();
+        if (!mounted) return;
 
         // Step 4.5: Pre-load sender keys for this channel (CRITICAL for decryption)
         // This ensures we can decrypt video key responses from other participants
         await _loadChannelSenderKeys();
+        if (!mounted) return;
       }
+
+      // Step 4.8: Register E2EE listeners BEFORE requesting keys
+      // This ensures the handlers are ready to receive responses
+      debugPrint('[PreJoin] Registering E2EE listeners before key exchange');
+      VideoConferenceService.instance.registerE2EEListeners(widget.channelId);
+      if (!mounted) return;
 
       // Step 5: Handle E2EE key exchange
       if (_isFirstParticipant) {
         // First participant generates key immediately in PreJoin
         debugPrint('[PreJoin] First participant - generating E2EE key now');
         await _generateE2EEKey();
+        if (!mounted) return;
       } else {
         // Request E2EE key from existing participants
         await _requestE2EEKey();
+        if (!mounted) return;
       }
 
       // Step 6: Start camera preview with selected device
@@ -187,6 +203,7 @@ class _VideoConferencePreJoinViewState
       }
     } catch (e) {
       debugPrint('[PreJoin] Initialization error: $e');
+      if (!mounted) return;
       setState(() {
         _keyExchangeError = 'Initialization failed: $e';
       });
@@ -196,6 +213,7 @@ class _VideoConferencePreJoinViewState
   /// Load available cameras and microphones
   Future<void> _loadMediaDevices() async {
     try {
+      if (!mounted) return;
       setState(() => _isLoadingDevices = true);
 
       // Request both camera and microphone permissions simultaneously
@@ -206,15 +224,27 @@ class _VideoConferencePreJoinViewState
 
       try {
         // Create temporary tracks to trigger permission dialogs
-        final results = await Future.wait([
-          LocalVideoTrack.createCameraTrack(const CameraCaptureOptions()),
-          LocalAudioTrack.create(const AudioCaptureOptions()),
-        ]);
+        final results =
+            await Future.wait<LocalTrack>([
+              LocalVideoTrack.createCameraTrack(const CameraCaptureOptions()),
+              LocalAudioTrack.create(const AudioCaptureOptions()),
+            ]).timeout(
+              const Duration(seconds: 5),
+              onTimeout: () {
+                debugPrint('[PreJoin] ⚠️ Permission prompt timeout after 5s');
+                return <LocalTrack>[];
+              },
+            );
 
-        tempVideoTrack = results[0] as LocalVideoTrack;
-        tempAudioTrack = results[1] as LocalAudioTrack;
-
-        debugPrint('[PreJoin] ✅ Permissions granted');
+        if (results.length >= 2) {
+          tempVideoTrack = results[0] as LocalVideoTrack;
+          tempAudioTrack = results[1] as LocalAudioTrack;
+          debugPrint('[PreJoin] ✅ Permissions granted');
+        } else {
+          debugPrint(
+            '[PreJoin] ⚠️ Permission flow did not complete, continuing',
+          );
+        }
       } catch (e) {
         debugPrint('[PreJoin] ⚠️ Permission denied or error: $e');
         // Continue anyway to show available devices
@@ -234,6 +264,7 @@ class _VideoConferencePreJoinViewState
       await tempVideoTrack?.dispose();
       await tempAudioTrack?.dispose();
 
+      if (!mounted) return;
       setState(() => _isLoadingDevices = false);
 
       debugPrint(
@@ -241,6 +272,7 @@ class _VideoConferencePreJoinViewState
       );
     } catch (e) {
       debugPrint('[PreJoin] Error loading devices: $e');
+      if (!mounted) return;
       setState(() {
         _isLoadingDevices = false;
         _keyExchangeError = 'Failed to load media devices: $e';
@@ -251,7 +283,7 @@ class _VideoConferencePreJoinViewState
   /// Register as participant on server
   Future<void> _registerAsParticipant() async {
     try {
-      SocketService().emit('video:register-participant', {
+      SocketService.instance.emit('video:register-participant', {
         'channelId': widget.channelId,
       });
       debugPrint('[PreJoin] Registered as participant');
@@ -267,6 +299,7 @@ class _VideoConferencePreJoinViewState
       debugPrint('[PreJoin][TEST] 🔍 CHECKING PARTICIPANT STATUS');
       debugPrint('[PreJoin][TEST] Channel ID: ${widget.channelId}');
 
+      if (!mounted) return;
       setState(() => _isCheckingParticipants = true);
 
       // Listen for response
@@ -281,7 +314,7 @@ class _VideoConferencePreJoinViewState
         }
       }
 
-      SocketService().registerListener(
+      SocketService.instance.registerListener(
         'video:participants-info',
         listener,
         registrationName: 'VideoConferencePrejoinView',
@@ -289,7 +322,7 @@ class _VideoConferencePreJoinViewState
 
       // Request participant info
       debugPrint('[PreJoin][TEST] 📤 Emitting video:check-participants...');
-      SocketService().emit('video:check-participants', {
+      SocketService.instance.emit('video:check-participants', {
         'channelId': widget.channelId,
       });
 
@@ -302,7 +335,7 @@ class _VideoConferencePreJoinViewState
         },
       );
 
-      SocketService().unregisterListener(
+      SocketService.instance.unregisterListener(
         'video:participants-info',
         registrationName: 'VideoConferencePrejoinView',
       );
@@ -311,10 +344,12 @@ class _VideoConferencePreJoinViewState
         throw Exception(result['error']);
       }
 
+      if (!mounted) return;
       setState(() {
         _isFirstParticipant = result['isFirstParticipant'] ?? false;
         _participantCount = result['participantCount'] ?? 0;
         _isCheckingParticipants = false;
+        _activeParticipantIds = _extractParticipantIds(result);
       });
 
       debugPrint('[PreJoin][TEST] ✅ PARTICIPANT STATUS RECEIVED');
@@ -324,6 +359,7 @@ class _VideoConferencePreJoinViewState
     } catch (e) {
       debugPrint('[PreJoin][TEST] ❌ ERROR checking participants: $e');
       debugPrint('═══════════════════════════════════════════════════════════');
+      if (!mounted) return;
       setState(() {
         _isCheckingParticipants = false;
         _keyExchangeError = 'Failed to check participants: $e';
@@ -331,95 +367,78 @@ class _VideoConferencePreJoinViewState
     }
   }
 
-  /// Load sender keys for all channel participants
+  List<String> _extractParticipantIds(Map<String, dynamic> result) {
+    final participants = result['participants'] as List<dynamic>? ?? [];
+    return participants
+        .map((participant) => participant['userId'] as String?)
+        .whereType<String>()
+        .toList();
+  }
+
+  /// Exchange sender keys for the channel
   /// CRITICAL: Must be called BEFORE E2EE key exchange to decrypt responses
+  /// Creates and distributes our sender key, receives keys from other participants
+  ///
+  /// FORCE MODE: Always redistributes sender keys to all participants regardless of
+  /// deduplication metadata. This ensures all participants can decrypt our messages.
   Future<void> _loadChannelSenderKeys() async {
     try {
       debugPrint('═══════════════════════════════════════════════════════════');
-      debugPrint('[PreJoin] 🔑 LOADING SENDER KEYS FOR CHANNEL');
+      debugPrint('[PreJoin] 🔑 FORCE EXCHANGING SENDER KEYS FOR CHANNEL');
       debugPrint('[PreJoin] Channel: ${widget.channelId}');
 
-      // First, check if this is a WebRTC channel
-      // Only WebRTC channels have LiveKit participants
-      final channelInfoResp = await ApiService.dio.get(
-        '/client/channels/${widget.channelId}',
+      // Get signalClient (same way as text group channels)
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClientWithStoredCredentials();
+
+      final currentUserId = signalClient.getCurrentUserId();
+      final currentDeviceId = signalClient.getCurrentDeviceId();
+
+      // Check if we already have a sender key for this channel
+      final hasSenderKey = await signalClient.messagingService.hasSenderKey(
+        widget.channelId,
+        currentUserId,
+        currentDeviceId,
       );
 
-      final channelType = channelInfoResp.data?['type'] ?? 'webrtc';
-      debugPrint('[PreJoin] Channel type: $channelType');
-
-      if (channelType != 'webrtc') {
+      if (!hasSenderKey) {
         debugPrint(
-          '[PreJoin] ⚠️ Channel is not WebRTC type, skipping participants fetch',
+          '[PreJoin] Creating and distributing sender key (force=true)...',
         );
-        return;
+        await signalClient.messagingService.ensureSenderKeyForGroup(
+          widget.channelId,
+          force: true, // Force distribution to all participants
+          activeMemberIds: _activeParticipantIds.isEmpty
+              ? null
+              : _activeParticipantIds,
+        );
+        debugPrint('[PreJoin] ✓ Sender key created and force-distributed');
+      } else {
+        debugPrint('[PreJoin] ✓ Sender key exists, force-redistributing...');
+        await signalClient.messagingService.ensureSenderKeyForGroup(
+          widget.channelId,
+          force: true, // Force redistribution regardless of metadata
+          activeMemberIds: _activeParticipantIds.isEmpty
+              ? null
+              : _activeParticipantIds,
+        );
+        debugPrint(
+          '[PreJoin] ✓ Sender key force-redistributed to all participants',
+        );
       }
 
-      // Get all participants' user IDs and device IDs
-      final response = await ApiService.dio.get(
-        '/client/channels/${widget.channelId}/participants',
-      );
+      // Give sender key distribution MORE time to propagate
+      // Increased from 500ms to 2000ms to ensure delivery across network latency
+      debugPrint('[PreJoin] ⏳ Waiting 2s for sender key propagation...');
+      await Future.delayed(const Duration(milliseconds: 2000));
 
-      if (response.data == null) {
-        debugPrint('[PreJoin] ⚠️ No participants data received');
-        return;
-      }
-
-      final participants =
-          response.data['participants'] as List<dynamic>? ?? [];
-      debugPrint('[PreJoin] Found ${participants.length} participants');
-
-      int loaded = 0;
-      int failed = 0;
-
-      // Load sender key for each participant
-      for (final participant in participants) {
-        final userId = participant['uuid'] as String?;
-        final deviceId = participant['deviceId'] as int?;
-
-        if (userId == null || deviceId == null) continue;
-
-        // Skip our own device (we already have our own key)
-        if (userId == SignalService.instance.currentUserId &&
-            deviceId == SignalService.instance.currentDeviceId) {
-          continue;
-        }
-
-        try {
-          final keyLoaded = await SignalService.instance
-              .loadSenderKeyFromServer(
-                channelId: widget.channelId,
-                userId: userId,
-                deviceId: deviceId,
-                forceReload: false, // Use cached if available
-              );
-
-          if (keyLoaded) {
-            loaded++;
-            debugPrint('[PreJoin] ✓ Loaded sender key for $userId:$deviceId');
-          } else {
-            debugPrint(
-              '[PreJoin] ℹ️ No sender key available for $userId:$deviceId (might not have sent any messages yet)',
-            );
-          }
-        } catch (e) {
-          failed++;
-          debugPrint(
-            '[PreJoin] ⚠️ Failed to load sender key for $userId:$deviceId: $e',
-          );
-        }
-      }
-
-      debugPrint('[PreJoin] Sender key loading complete:');
-      debugPrint('[PreJoin]   - Loaded: $loaded');
-      debugPrint('[PreJoin]   - Failed: $failed');
-      debugPrint('[PreJoin]   - Total participants: ${participants.length}');
+      debugPrint('[PreJoin] ✓ Sender key exchange completed');
+      debugPrint('[PreJoin] All participants should now have our sender key');
       debugPrint('═══════════════════════════════════════════════════════════');
     } catch (e) {
-      debugPrint('[PreJoin] ❌ Error loading sender keys: $e');
-      debugPrint(
-        '[PreJoin] Continuing anyway - keys will be loaded on-demand if needed',
-      );
+      debugPrint('[PreJoin] ❌ Error exchanging sender keys: $e');
+      debugPrint('[PreJoin] This may cause E2EE key decryption to fail');
+      // Don't rethrow - continue anyway, keys might already exist
     }
   }
 
@@ -430,6 +449,7 @@ class _VideoConferencePreJoinViewState
       debugPrint('[PreJoin][TEST] 🔐 GENERATING E2EE KEY (FIRST PARTICIPANT)');
       debugPrint('[PreJoin][TEST] Channel: ${widget.channelId}');
 
+      if (!mounted) return;
       setState(() {
         _isExchangingKey = true;
         _keyExchangeError = null;
@@ -443,6 +463,7 @@ class _VideoConferencePreJoinViewState
         widget.channelId,
       );
 
+      if (!mounted) return;
       setState(() {
         _hasE2EEKey = success;
         _isExchangingKey = false;
@@ -472,6 +493,7 @@ class _VideoConferencePreJoinViewState
     } catch (e) {
       debugPrint('[PreJoin][TEST] ❌ ERROR generating E2EE key: $e');
       debugPrint('═══════════════════════════════════════════════════════════');
+      if (!mounted) return;
       setState(() {
         _hasE2EEKey = false;
         _isExchangingKey = false;
@@ -481,31 +503,78 @@ class _VideoConferencePreJoinViewState
   }
 
   /// Request E2EE key from existing participants
+  /// First tries sender key-based exchange, falls back to 1-to-1 if that fails
   Future<void> _requestE2EEKey() async {
     try {
       debugPrint('═══════════════════════════════════════════════════════════');
       debugPrint('[PreJoin][TEST] 🔐 REQUESTING E2EE KEY FROM PARTICIPANTS');
       debugPrint('[PreJoin][TEST] Channel: ${widget.channelId}');
 
+      if (!mounted) return;
       setState(() {
         _isExchangingKey = true;
         _keyExchangeError = null;
       });
 
-      // Send key request via Signal Protocol
-      // The VideoConferenceService singleton will register itself to receive the response
-      debugPrint('[PreJoin][TEST] 📤 Sending key request...');
-      final success = await VideoConferenceService.requestE2EEKey(
+      // CRITICAL: Recheck participants before requesting key
+      // (They might have left since the initial check)
+      debugPrint(
+        '[PreJoin][TEST] 🔄 Rechecking participants before key request...',
+      );
+      await _checkParticipantStatus();
+      if (!mounted) return;
+
+      if (_isFirstParticipant) {
+        debugPrint(
+          '[PreJoin][TEST] ⚠️ Room is now empty - generating key instead',
+        );
+        await _generateE2EEKey();
+        return;
+      }
+
+      debugPrint(
+        '[PreJoin][TEST] ✓ ${_participantCount} participant(s) still present',
+      );
+
+      // Try normal sender key-based exchange first
+      debugPrint('[PreJoin][TEST] 📤 Attempt 1: Sender key-based exchange...');
+      bool success = await VideoConferenceService.requestE2EEKey(
         widget.channelId,
       );
 
+      // If that failed and we have more time, wait a bit longer for sender keys
+      // then try again (sender keys might arrive late)
+      if (!success) {
+        debugPrint('[PreJoin][TEST] ⚠️ First attempt failed');
+        debugPrint(
+          '[PreJoin][TEST] 📤 Attempt 2: Retry after waiting for sender keys...',
+        );
+
+        // Give sender keys more time to propagate
+        await Future.delayed(const Duration(seconds: 2));
+
+        // Retry the request
+        success = await VideoConferenceService.requestE2EEKey(widget.channelId);
+
+        if (success) {
+          debugPrint(
+            '[PreJoin][TEST] ✅ Retry successful - key received after delay',
+          );
+        } else {
+          debugPrint(
+            '[PreJoin][TEST] ❌ Both attempts failed - sender keys may not be available',
+          );
+        }
+      }
+
+      if (!mounted) return;
       setState(() {
         _hasE2EEKey = success;
         _isExchangingKey = false;
 
         if (!success) {
           _keyExchangeError =
-              'Failed to receive encryption key from other participants';
+              'Failed to receive encryption key. Sender keys may not be available yet.';
         }
       });
 
@@ -521,7 +590,10 @@ class _VideoConferencePreJoinViewState
       } else {
         debugPrint('[PreJoin][TEST] ❌ E2EE KEY EXCHANGE FAILED');
         debugPrint(
-          '[PreJoin][TEST] Reason: Timeout or no response from participants',
+          '[PreJoin][TEST] Reason: Sender key exchange may be incomplete',
+        );
+        debugPrint(
+          '[PreJoin][TEST] Suggestion: Wait longer before requesting key',
         );
         debugPrint(
           '═══════════════════════════════════════════════════════════',
@@ -530,6 +602,7 @@ class _VideoConferencePreJoinViewState
     } catch (e) {
       debugPrint('[PreJoin][TEST] ❌ ERROR requesting E2EE key: $e');
       debugPrint('═══════════════════════════════════════════════════════════');
+      if (!mounted) return;
       setState(() {
         _hasE2EEKey = false;
         _isExchangingKey = false;
@@ -547,6 +620,7 @@ class _VideoConferencePreJoinViewState
         CameraCaptureOptions(deviceId: _selectedCamera!.deviceId),
       );
 
+      if (!mounted) return;
       setState(() {});
       debugPrint('[PreJoin] Camera preview started');
     } catch (e) {
@@ -591,7 +665,7 @@ class _VideoConferencePreJoinViewState
       }
 
       // Confirm E2EE key status to server
-      SocketService().emit('video:confirm-e2ee-key', <String, dynamic>{
+      SocketService.instance.emit('video:confirm-e2ee-key', <String, dynamic>{
         'channelId': meetingId,
       });
 

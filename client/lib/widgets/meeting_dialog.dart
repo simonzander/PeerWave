@@ -4,7 +4,7 @@ import 'dart:convert';
 import '../models/meeting.dart';
 import '../services/meeting_service.dart';
 import '../services/api_service.dart';
-import '../services/signal_service.dart';
+import '../services/server_settings_service.dart';
 import '../theme/semantic_colors.dart';
 
 /// Dialog for creating or editing meetings
@@ -109,7 +109,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
       final invitedStatuses = meeting.invitedRsvpStatuses ?? const {};
 
       // Fetch all users once and map by uuid
-      final response = await ApiService.get('/people/list');
+      final response = await ApiService.instance.get('/people/list');
       final users = response.data is List ? response.data as List : [];
       final byId = <String, Map<String, dynamic>>{};
       for (final u in users) {
@@ -715,7 +715,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
     setState(() => _isSearching = true);
 
     try {
-      final response = await ApiService.get('/people/list');
+      final response = await ApiService.instance.get('/people/list');
       if (response.statusCode == 200) {
         final users = response.data is List ? response.data as List : [];
         final results = <Map<String, String>>[];
@@ -857,8 +857,9 @@ class _MeetingDialogState extends State<MeetingDialog> {
       ) async {
         if (userIds.isEmpty) return;
 
-        final signal = SignalService.instance;
-        final senderId = signal.currentUserId;
+        final signalClient = await ServerSettingsService.instance
+            .getOrCreateSignalClientWithStoredCredentials();
+        final senderId = signalClient.getCurrentUserId?.call();
         if (senderId == null || senderId.isEmpty) return;
 
         final meetingTitle = meeting.title;
@@ -872,7 +873,7 @@ class _MeetingDialogState extends State<MeetingDialog> {
           if (uid.isEmpty) continue;
           if (uid == senderId) continue;
           try {
-            await signal.sendItem(
+            await signalClient.messagingService.send1to1Message(
               recipientUserId: uid,
               type: 'system:meetingInvite',
               payload: payload,

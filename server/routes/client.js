@@ -433,19 +433,29 @@ clientRoutes.get("/signal/status/minimal", verifyAuthEither, async (req, res) =>
     }
     
     try {
+        // Find client record - use same query logic as other endpoints
+        const clientQuery = req.sessionAuth && req.clientId 
+            ? { owner: sessionUuid, clientid: req.clientId }
+            : { owner: sessionUuid, device_id: sessionDeviceId };
+        
         // Fetch identity key from Client table
-        const client = await Client.findOne({ 
-            where: { 
-                owner: sessionUuid, 
-                clientid: sessionDeviceId 
-            }
-        });
+        const client = await Client.findOne({ where: clientQuery });
+        
+        if (!client) {
+            return res.status(404).json({ 
+                status: "error", 
+                message: "Client device not found" 
+            });
+        }
+        
+        // Use client.clientid for consistent lookups
+        const clientIdToUse = client.clientid;
         
         // Fetch latest SignedPreKey
         const signedPreKey = await SignalSignedPreKey.findOne({
             where: {
                 owner: sessionUuid,
-                client: sessionDeviceId
+                client: clientIdToUse
             },
             order: [['id', 'DESC']]
         });
@@ -454,7 +464,7 @@ clientRoutes.get("/signal/status/minimal", verifyAuthEither, async (req, res) =>
         const preKeys = await SignalPreKey.findAll({
             where: {
                 owner: sessionUuid,
-                client: sessionDeviceId
+                client: clientIdToUse
             },
             attributes: ['prekey_id', 'prekey_data'],
             limit: 110 // Max expected PreKeys
@@ -708,6 +718,150 @@ clientRoutes.post("/signal/prekeys/batch", verifyAuthEither, async (req, res) =>
     }
 });
 
+// Upload single PreKey via REST API (alternative to Socket.IO)
+clientRoutes.post("/signal/prekey", signalKeyLimiter, verifyAuthEither, async (req, res) => {
+    const sessionUuid = req.userId || req.session.uuid;
+    const sessionDeviceId = req.deviceId || req.session.deviceId;
+    
+    if (!sessionUuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    
+    try {
+        const { id, data } = req.body;
+        
+        if (typeof id !== 'number' || !data) {
+            return res.status(400).json({ 
+                status: "error", 
+                message: "Missing required fields: id (number), data" 
+            });
+        }
+        
+        // Validate prekey_data is 33-byte base64-encoded public key
+        let decoded;
+        try {
+            decoded = Buffer.from(data, 'base64');
+        } catch (e) {
+            return res.status(400).json({ 
+                status: "error", 
+                message: "Invalid base64 in prekey_data" 
+            });
+        }
+        
+        if (decoded.length !== 33) {
+            return res.status(400).json({ 
+                status: "error", 
+                message: `Invalid prekey_data size: ${decoded.length} bytes (expected 33). Possible private key leak.` 
+            });
+        }
+        
+        // Find client record
+        const clientQuery = req.sessionAuth && req.clientId 
+            ? { owner: sessionUuid, clientid: req.clientId }
+            : { owner: sessionUuid, device_id: sessionDeviceId };
+        
+        const client = await Client.findOne({ where: clientQuery });
+        
+        if (!client) {
+            return res.status(404).json({ 
+                status: "error", 
+                message: "Client device not found" 
+            });
+        }
+        
+        // Store pre-key
+        await writeQueue.enqueue(async () => {
+            return await SignalPreKey.findOrCreate({
+                where: {
+                    prekey_id: id,
+                    owner: sessionUuid,
+                    client: client.clientid,
+                },
+                defaults: {
+                    prekey_data: data,
+                }
+            });
+        }, `storePreKey-REST-${id}`);
+        
+        logger.info('[SIGNAL PREKEY] PreKey stored', { 
+            userUuid: sanitizeForLog(sessionUuid), 
+            deviceId: sanitizeForLog(client.clientid),
+            keyId: id
+        });
+        
+        res.status(200).json({ 
+            status: "success", 
+            message: "PreKey stored successfully" 
+        });
+    } catch (error) {
+        logger.error('[SIGNAL PREKEY] Error storing PreKey', error);
+        res.status(500).json({ 
+            status: "error", 
+            message: "Internal server error" 
+        });
+    }
+});
+
+// Delete single PreKey via REST API (alternative to Socket.IO)
+clientRoutes.delete("/signal/prekey/:id", signalKeyLimiter, verifyAuthEither, async (req, res) => {
+    const sessionUuid = req.userId || req.session.uuid;
+    const sessionDeviceId = req.deviceId || req.session.deviceId;
+    
+    if (!sessionUuid) {
+        return res.status(401).json({ status: "error", message: "Unauthorized" });
+    }
+    
+    try {
+        const keyId = parseInt(req.params.id);
+        
+        if (isNaN(keyId)) {
+            return res.status(400).json({ 
+                status: "error", 
+                message: "Invalid key ID" 
+            });
+        }
+        
+        // Find client record
+        const clientQuery = req.sessionAuth && req.clientId 
+            ? { owner: sessionUuid, clientid: req.clientId }
+            : { owner: sessionUuid, device_id: sessionDeviceId };
+        
+        const client = await Client.findOne({ where: clientQuery });
+        
+        if (!client) {
+            return res.status(404).json({ 
+                status: "error", 
+                message: "Client device not found" 
+            });
+        }
+        
+        // Delete pre-key
+        await writeQueue.enqueue(async () => {
+            return await SignalPreKey.destroy({
+                where: { 
+                    prekey_id: keyId, 
+                    owner: sessionUuid, 
+                    client: client.clientid 
+                }
+            });
+        }, `removePreKey-REST-${keyId}`);
+        
+        logger.info('[SIGNAL PREKEY] PreKey deleted', { 
+            userUuid: sanitizeForLog(sessionUuid), 
+            deviceId: sanitizeForLog(client.clientid),
+            keyId: keyId
+        });
+        
+        res.status(204).send(); // 204 No Content for successful DELETE
+    } catch (error) {
+        logger.error('[SIGNAL PREKEY] Error deleting PreKey', error);
+        res.status(500).json({ 
+            status: "error", 
+            message: "Internal server error" 
+        });
+    }
+});
+
 // Upload Identity Key via REST API (alternative to Socket.IO)
 clientRoutes.post("/signal/identity", signalKeyLimiter, verifyAuthEither, async (req, res) => {
     const sessionUuid = req.userId || req.session.uuid;
@@ -943,17 +1097,29 @@ clientRoutes.get("/signal/prekey_bundle/:userId", verifyAuthEither, async (req, 
         });
 
         // Für jedes Gerät: gib ein random PreKey und NUR den letzten (neuesten) SignedPreKey aus
-        const result = clients.map(client => ({
-            clientid: client.clientid,
-            userId: client.owner,
-            device_id: client.device_id,
-            public_key: client.public_key,
-            registration_id: client.registration_id,
-            signedPreKey: (client.SignalSignedPreKeys && client.SignalSignedPreKeys.length > 0)
-                ? client.SignalSignedPreKeys[0] // nur der neueste (wegen order DESC)
-                : null,
-            preKey: getRandom(client.SignalPreKeys)
-        }));
+        const result = clients.map(client => {
+            const signedPreKey = (client.SignalSignedPreKeys && client.SignalSignedPreKeys.length > 0)
+                ? client.SignalSignedPreKeys[0]
+                : null;
+
+            return {
+                clientid: client.clientid,
+                userId: client.owner,
+                device_id: client.device_id,
+                public_key: client.public_key,
+                registration_id: client.registration_id,
+                signedPreKey: signedPreKey
+                    ? {
+                        signed_prekey_id: signedPreKey.signed_prekey_id,
+                        signed_prekey_data: signedPreKey.signed_prekey_data,
+                        signed_prekey_signature: signedPreKey.signed_prekey_signature,
+                        createdAt: signedPreKey.createdAt,
+                        updatedAt: signedPreKey.updatedAt
+                    }
+                    : null,
+                preKey: getRandom(client.SignalPreKeys)
+            };
+        });
 
         logger.debug('[PREKEY BUNDLE] Returning devices', {
             totalDevices: result.length,
@@ -1502,7 +1668,12 @@ clientRoutes.post("/client/channels/:channelId/join", verifyAuthEither, async(re
             where: { userId, channelId }
         });
         
-        if (existingMember) {
+        // Also check if user already has a role assignment
+        const existingRoleAssignment = await UserRoleChannel.findOne({
+            where: { userId, channelId }
+        });
+        
+        if (existingMember || existingRoleAssignment) {
             return res.status(400).json({ status: "error", message: "Already a member of this channel" });
         }
         
@@ -1520,11 +1691,19 @@ clientRoutes.post("/client/channels/:channelId/join", verifyAuthEither, async(re
         
         // Assign default role if channel has one
         if (channel.defaultRoleId) {
-            await UserRoleChannel.create({
-                userId,
-                roleId: channel.defaultRoleId,
-                channelId
-            });
+            try {
+                await UserRoleChannel.create({
+                    userId,
+                    roleId: channel.defaultRoleId,
+                    channelId
+                });
+            } catch (roleError) {
+                // Ignore duplicate key errors (race condition)
+                if (roleError.name !== 'SequelizeUniqueConstraintError') {
+                    throw roleError;
+                }
+                logger.debug('[CHANNELS] User already has role assignment (race condition handled)');
+            }
         }
         
         res.status(200).json({ 

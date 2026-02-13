@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/meeting_service.dart';
 import '../services/video_conference_service.dart';
+import '../services/server_settings_service.dart';
 import '../services/socket_service.dart'
     if (dart.library.io) '../services/socket_service_native.dart';
 import '../services/api_service.dart';
-import '../services/signal_service.dart';
 import '../models/meeting.dart';
 import '../extensions/snackbar_extensions.dart';
 import '../widgets/video_prejoin_widget.dart';
@@ -95,21 +95,21 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
       );
 
       // Check socket connection (increased timeout for slower networks)
-      if (!SocketService().isConnected) {
+      if (!SocketService.instance.isConnected) {
         debugPrint('[MeetingPreJoin] Waiting for socket connection...');
         int attempts = 0;
-        while (!SocketService().isConnected && attempts < 150) {
+        while (!SocketService.instance.isConnected && attempts < 150) {
           await Future.delayed(const Duration(milliseconds: 100));
           attempts++;
         }
-        if (!SocketService().isConnected) {
+        if (!SocketService.instance.isConnected) {
           throw Exception('Socket connection timeout after 15 seconds');
         }
       }
 
       // Register as participant using meeting ID as room identifier
       // This will trigger on-demand LiveKit room creation
-      SocketService().emit('video:register-participant', {
+      SocketService.instance.emit('video:register-participant', {
         'channelId': _meeting!.meetingId, // Use meeting ID as room identifier
       });
 
@@ -118,6 +118,12 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
 
       // Load sender keys for the channel
       await _loadChannelSenderKeys();
+
+      // Register E2EE listeners BEFORE requesting keys
+      debugPrint('[MeetingPreJoin] Registering E2EE listeners');
+      VideoConferenceService.instance.registerE2EEListeners(
+        _meeting!.meetingId,
+      );
 
       // Handle E2EE key exchange
       if (_isFirstParticipant) {
@@ -148,13 +154,13 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
         }
       }
 
-      SocketService().registerListener(
+      SocketService.instance.registerListener(
         'video:participants-info',
         listener,
         registrationName: 'MeetingPrejoinView',
       );
 
-      SocketService().emit('video:check-participants', {
+      SocketService.instance.emit('video:check-participants', {
         'channelId': _meeting!.meetingId, // Use meeting ID as room identifier
       });
 
@@ -163,7 +169,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
         onTimeout: () => {'error': 'Timeout'},
       );
 
-      SocketService().unregisterListener(
+      SocketService.instance.unregisterListener(
         'video:participants-info',
         registrationName: 'MeetingPrejoinView',
       );
@@ -196,7 +202,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
   Future<void> _loadChannelSenderKeys() async {
     try {
       // Get meeting participants instead of channel participants
-      final response = await ApiService.dio.get(
+      final response = await ApiService.instance.get(
         '/api/meetings/${_meeting!.meetingId}/participants',
       );
 
@@ -210,24 +216,21 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
         final deviceId = participant['deviceId'] as int?;
 
         if (userId == null || deviceId == null) continue;
-        if (userId == SignalService.instance.currentUserId &&
-            deviceId == SignalService.instance.currentDeviceId) {
+
+        // Skip our own device
+        final signalClient = await ServerSettingsService.instance
+            .getOrCreateSignalClientWithStoredCredentials();
+        if (userId == signalClient.getCurrentUserId?.call() &&
+            deviceId == signalClient.getCurrentDeviceId?.call()) {
           continue;
         }
 
-        try {
-          await SignalService.instance.loadSenderKeyFromServer(
-            channelId:
-                _meeting!.meetingId, // Use meeting ID as channel identifier
-            userId: userId,
-            deviceId: deviceId,
-            forceReload: false,
-          );
-        } catch (e) {
-          debugPrint(
-            '[MeetingPreJoin] Failed to load sender key for $userId:$deviceId: $e',
-          );
-        }
+        // Note: Sender keys are now loaded on-demand when messages are received
+        // in the new SignalClient architecture. Pre-loading is no longer needed.
+        // The ensureSenderKeyForGroup method will handle this automatically.
+        debugPrint(
+          '[MeetingPreJoin] Participant registered: $userId:$deviceId (sender key will load on-demand)',
+        );
       }
     } catch (e) {
       debugPrint('[MeetingPreJoin] Error loading sender keys: $e');
@@ -308,7 +311,7 @@ class _MeetingPreJoinViewState extends State<MeetingPreJoinView> {
 
     try {
       // Confirm E2EE key for meeting
-      SocketService().emit('video:confirm-e2ee-key', {
+      SocketService.instance.emit('video:confirm-e2ee-key', {
         'channelId': _meeting!.meetingId, // Use meeting ID as room identifier
       });
 

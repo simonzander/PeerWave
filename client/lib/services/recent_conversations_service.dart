@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'user_profile_service.dart';
 import 'storage/sqlite_recent_conversations_store.dart';
+import 'storage/sqlite_message_store.dart';
 
 /// Service for managing recent direct message conversations
 ///
@@ -24,16 +25,42 @@ class RecentConversationsService {
           await SqliteRecentConversationsStore.getInstance();
 
       // Get recent conversations
-      final recentConvs = await conversationsStore.getRecentConversations(
-        limit: maxRecentConversations,
+      var recentConvs = await conversationsStore.getRecentConversations(
+        limit: null, // Get ALL conversations
       );
 
       debugPrint(
         '[RECENT_CONVERSATIONS] Found ${recentConvs.length} conversations in SQLite',
       );
 
+      // FALLBACK: If recent_conversations is empty, get from messages table
       if (recentConvs.isEmpty) {
-        return [];
+        debugPrint(
+          '[RECENT_CONVERSATIONS] recent_conversations table empty, checking messages table...',
+        );
+        final messageStore = await SqliteMessageStore.getInstance();
+        final uniqueSenders = await messageStore
+            .getAllUniqueConversationPartners();
+
+        if (uniqueSenders.isNotEmpty) {
+          debugPrint(
+            '[RECENT_CONVERSATIONS] Found ${uniqueSenders.length} conversations in messages table',
+          );
+          recentConvs = uniqueSenders
+              .map(
+                (userId) => {
+                  'userId': userId,
+                  'displayName': userId,
+                  'lastMessageAt': '',
+                },
+              )
+              .toList();
+        } else {
+          debugPrint(
+            '[RECENT_CONVERSATIONS] No conversations found in messages table either',
+          );
+          return [];
+        }
       }
 
       // Extract user IDs

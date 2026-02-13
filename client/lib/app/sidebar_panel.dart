@@ -3,7 +3,6 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../providers/role_provider.dart';
-import '../providers/notification_provider.dart';
 import '../services/recent_conversations_service.dart';
 import '../widgets/notification_badge.dart';
 import '../models/role.dart';
@@ -51,9 +50,8 @@ class _SidebarPanelState extends State<SidebarPanel> {
 
   Future<void> _fetchChannels() async {
     try {
-      ApiService.init();
-      final dio = ApiService.dio;
-      final resp = await dio.get('/client/channels');
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.get('/client/channels');
       if (resp.statusCode == 200) {
         final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
         if (data is List) {
@@ -352,10 +350,9 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
   Future<void> _loadRoles() async {
     setState(() => isLoadingRoles = true);
     try {
-      ApiService.init();
-      final dio = ApiService.dio;
+      await ApiService.instance.init();
       final scope = channelType == 'webrtc' ? 'channelWebRtc' : 'channelSignal';
-      final resp = await dio.get('/api/roles?scope=$scope');
+      final resp = await ApiService.instance.get('/api/roles?scope=$scope');
 
       if (resp.statusCode == 200) {
         final data = resp.data;
@@ -540,8 +537,8 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
     if (channelName.isEmpty || selectedRole == null) return;
 
     try {
-      ApiService.init();
-      final resp = await ApiService.createChannel(
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.createChannel(
         name: channelName,
         description: channelDescription,
         isPrivate: isPrivate,
@@ -610,124 +607,111 @@ class _DirectMessagesDropdownState extends State<_DirectMessagesDropdown> {
       allConversations[dm['uuid']!] = dm;
     }
 
-    return Consumer<NotificationProvider>(
-      builder: (context, notificationProvider, _) {
-        // Get conversation list
-        var conversationsList = allConversations.values.toList();
+    // Get conversation list
+    var conversationsList = allConversations.values.toList();
 
-        // Sort by last message time (most recent first)
-        conversationsList.sort((a, b) {
-          final aTime = notificationProvider.lastMessageTimes[a['uuid']];
-          final bTime = notificationProvider.lastMessageTimes[b['uuid']];
+    DateTime _parseLastMessageAt(Map<String, String> conv) {
+      final raw = conv['lastMessageAt'];
+      if (raw == null || raw.isEmpty) {
+        return DateTime.fromMillisecondsSinceEpoch(0);
+      }
+      return DateTime.tryParse(raw) ?? DateTime.fromMillisecondsSinceEpoch(0);
+    }
 
-          // If both have timestamps, compare them (descending)
-          if (aTime != null && bTime != null) {
-            return bTime.compareTo(aTime);
-          }
-          // If only one has timestamp, put it first
-          if (aTime != null) return -1;
-          if (bTime != null) return 1;
-          // Neither has timestamp, keep original order
-          return 0;
-        });
+    // Sort by last message time (most recent first)
+    conversationsList.sort((a, b) {
+      final aTime = _parseLastMessageAt(a);
+      final bTime = _parseLastMessageAt(b);
+      return bTime.compareTo(aTime);
+    });
 
-        // Limit to 20 most recent
-        if (conversationsList.length > 20) {
-          conversationsList = conversationsList.sublist(0, 20);
-        }
+    // Limit to 20 most recent
+    if (conversationsList.length > 20) {
+      conversationsList = conversationsList.sublist(0, 20);
+    }
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                IconButton(
-                  icon: Icon(
-                    expanded
-                        ? Icons.keyboard_arrow_down
-                        : Icons.keyboard_arrow_right,
-                    color: Colors.white,
-                  ),
-                  onPressed: () => setState(() => expanded = !expanded),
-                ),
-                const Text(
-                  'Direct Messages',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.add, color: Colors.white),
-                  onPressed: () {},
-                ),
-              ],
-            ),
-            AnimatedCrossFade(
-              firstChild: Container(),
-              secondChild: Padding(
-                padding: const EdgeInsets.only(
-                  left: 32.0,
-                  top: 4.0,
-                  bottom: 4.0,
-                ),
-                child: conversationsList.isEmpty
-                    ? const Text(
-                        'No messages',
-                        style: TextStyle(color: Colors.white70),
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: conversationsList.map((dm) {
-                          final displayName = dm['displayName'] ?? 'Unknown';
-                          final uuid = dm['uuid'] ?? '';
-                          return InkWell(
-                            onTap: () {
-                              if (widget.onDirectMessageTap != null) {
-                                widget.onDirectMessageTap!(uuid, displayName);
-                              }
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 4.0,
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.person,
-                                    color: Colors.white70,
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      displayName,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                  // Notification badge
-                                  NotificationBadge(
-                                    userId: uuid,
-                                    child: const SizedBox.shrink(),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
+            IconButton(
+              icon: Icon(
+                expanded
+                    ? Icons.keyboard_arrow_down
+                    : Icons.keyboard_arrow_right,
+                color: Colors.white,
               ),
-              crossFadeState: expanded
-                  ? CrossFadeState.showSecond
-                  : CrossFadeState.showFirst,
-              duration: const Duration(milliseconds: 200),
+              onPressed: () => setState(() => expanded = !expanded),
+            ),
+            const Text(
+              'Direct Messages',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.add, color: Colors.white),
+              onPressed: () {},
             ),
           ],
-        );
-      },
+        ),
+        AnimatedCrossFade(
+          firstChild: Container(),
+          secondChild: Padding(
+            padding: const EdgeInsets.only(left: 32.0, top: 4.0, bottom: 4.0),
+            child: conversationsList.isEmpty
+                ? const Text(
+                    'No messages',
+                    style: TextStyle(color: Colors.white70),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: conversationsList.map((dm) {
+                      final displayName = dm['displayName'] ?? 'Unknown';
+                      final uuid = dm['uuid'] ?? '';
+                      return InkWell(
+                        onTap: () {
+                          if (widget.onDirectMessageTap != null) {
+                            widget.onDirectMessageTap!(uuid, displayName);
+                          }
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4.0),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.person,
+                                color: Colors.white70,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  displayName,
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                              ),
+                              // Notification badge
+                              NotificationBadge(
+                                userId: uuid,
+                                child: const SizedBox.shrink(),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+          ),
+          crossFadeState: expanded
+              ? CrossFadeState.showSecond
+              : CrossFadeState.showFirst,
+          duration: const Duration(milliseconds: 200),
+        ),
+      ],
     );
   }
 }
@@ -755,147 +739,120 @@ class _ChannelsListWidgetState extends State<_ChannelsListWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<NotificationProvider>(
-      builder: (context, notificationProvider, _) {
-        // Sort channels by last message time (most recent first)
-        final sortedChannels = List<Map<String, dynamic>>.from(widget.channels);
-        sortedChannels.sort((a, b) {
-          final aTime = notificationProvider.lastMessageTimes[a['uuid']];
-          final bTime = notificationProvider.lastMessageTimes[b['uuid']];
+    final sortedChannels = List<Map<String, dynamic>>.from(widget.channels);
 
-          // If both have timestamps, compare them (descending)
-          if (aTime != null && bTime != null) {
-            return bTime.compareTo(aTime);
-          }
-          // If only one has timestamp, put it first
-          if (aTime != null) return -1;
-          if (bTime != null) return 1;
-          // Neither has timestamp, keep original order
-          return 0;
-        });
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                IconButton(
-                  icon: Icon(
-                    expanded
-                        ? Icons.keyboard_arrow_down
-                        : Icons.keyboard_arrow_right,
-                    color: Colors.white,
-                  ),
-                  onPressed: () => setState(() => expanded = !expanded),
-                ),
-                const Text(
-                  'Channels',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.add, color: Colors.white),
-                  onPressed: () => _showCreateChannelDialog(context),
-                  tooltip: 'Create Channel',
-                ),
-              ],
-            ),
-            AnimatedCrossFade(
-              firstChild: Container(),
-              secondChild: Padding(
-                padding: const EdgeInsets.only(
-                  left: 32.0,
-                  top: 4.0,
-                  bottom: 4.0,
-                ),
-                child: sortedChannels.isEmpty
-                    ? const Text(
-                        'No channels yet',
-                        style: TextStyle(color: Colors.white70),
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: sortedChannels.map((channel) {
-                          final name = channel['name'] ?? 'Unknown';
-                          final uuid = channel['uuid'] ?? '';
-                          final type = channel['type'] ?? 'webrtc';
-                          final isPrivate = channel['isPrivate'] ?? false;
-
-                          // Icon based on channel type
-                          Widget leadingIcon;
-                          if (type == 'signal') {
-                            // Signal channels get # prefix
-                            leadingIcon = const Text(
-                              '# ',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            );
-                          } else {
-                            // WebRTC channels get speaker icon
-                            leadingIcon = const Icon(
-                              Icons.campaign,
-                              color: Colors.white70,
-                              size: 18,
-                            );
-                          }
-
-                          return InkWell(
-                            onTap: () {
-                              if (widget.onChannelTap != null) {
-                                widget.onChannelTap!(uuid, name, type);
-                              }
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 4.0,
-                              ),
-                              child: Row(
-                                children: [
-                                  leadingIcon,
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      name,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                  if (isPrivate)
-                                    const Padding(
-                                      padding: EdgeInsets.only(left: 6),
-                                      child: Icon(
-                                        Icons.lock,
-                                        color: Colors.white54,
-                                        size: 16,
-                                      ),
-                                    ),
-                                  // Notification badge
-                                  NotificationBadge(
-                                    channelId: uuid,
-                                    child: const SizedBox.shrink(),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
+            IconButton(
+              icon: Icon(
+                expanded
+                    ? Icons.keyboard_arrow_down
+                    : Icons.keyboard_arrow_right,
+                color: Colors.white,
               ),
-              crossFadeState: expanded
-                  ? CrossFadeState.showSecond
-                  : CrossFadeState.showFirst,
-              duration: const Duration(milliseconds: 200),
+              onPressed: () => setState(() => expanded = !expanded),
+            ),
+            const Text(
+              'Channels',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.add, color: Colors.white),
+              onPressed: () => _showCreateChannelDialog(context),
+              tooltip: 'Create Channel',
             ),
           ],
-        );
-      },
+        ),
+        AnimatedCrossFade(
+          firstChild: Container(),
+          secondChild: Padding(
+            padding: const EdgeInsets.only(left: 32.0, top: 4.0, bottom: 4.0),
+            child: sortedChannels.isEmpty
+                ? const Text(
+                    'No channels yet',
+                    style: TextStyle(color: Colors.white70),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: sortedChannels.map((channel) {
+                      final name = channel['name'] ?? 'Unknown';
+                      final uuid = channel['uuid'] ?? '';
+                      final type = channel['type'] ?? 'webrtc';
+                      final isPrivate = channel['isPrivate'] ?? false;
+
+                      // Icon based on channel type
+                      Widget leadingIcon;
+                      if (type == 'signal') {
+                        // Signal channels get # prefix
+                        leadingIcon = const Text(
+                          '# ',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        );
+                      } else {
+                        // WebRTC channels get speaker icon
+                        leadingIcon = const Icon(
+                          Icons.campaign,
+                          color: Colors.white70,
+                          size: 18,
+                        );
+                      }
+
+                      return InkWell(
+                        onTap: () {
+                          if (widget.onChannelTap != null) {
+                            widget.onChannelTap!(uuid, name, type);
+                          }
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4.0),
+                          child: Row(
+                            children: [
+                              leadingIcon,
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  name,
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                              ),
+                              if (isPrivate)
+                                const Padding(
+                                  padding: EdgeInsets.only(left: 6),
+                                  child: Icon(
+                                    Icons.lock,
+                                    color: Colors.white54,
+                                    size: 16,
+                                  ),
+                                ),
+                              // Notification badge
+                              NotificationBadge(
+                                channelId: uuid,
+                                child: const SizedBox.shrink(),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+          ),
+          crossFadeState: expanded
+              ? CrossFadeState.showSecond
+              : CrossFadeState.showFirst,
+          duration: const Duration(milliseconds: 200),
+        ),
+      ],
     );
   }
 

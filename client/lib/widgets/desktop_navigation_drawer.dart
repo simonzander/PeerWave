@@ -166,8 +166,8 @@ class _DesktopNavigationDrawerState extends State<DesktopNavigationDrawer> {
     if (userIds.isEmpty) return;
 
     try {
-      ApiService.init();
-      final resp = await ApiService.post(
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.post(
         '/client/people/info',
         data: {'userIds': userIds},
       );
@@ -557,9 +557,9 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
   Future<void> _loadRoles() async {
     setState(() => isLoadingRoles = true);
     try {
-      ApiService.init();
+      await ApiService.instance.init();
       final scope = channelType == 'webrtc' ? 'channelWebRtc' : 'channelSignal';
-      final resp = await ApiService.get('/api/roles?scope=$scope');
+      final resp = await ApiService.instance.get('/api/roles?scope=$scope');
 
       if (resp.statusCode == 200) {
         final data = resp.data;
@@ -751,8 +751,8 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
     if (channelName.isEmpty || selectedRole == null) return;
 
     try {
-      ApiService.init();
-      final resp = await ApiService.createChannel(
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.createChannel(
         name: channelName,
         description: channelDescription,
         isPrivate: isPrivate,

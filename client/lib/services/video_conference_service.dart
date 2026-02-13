@@ -10,11 +10,13 @@ import '../models/audio_settings.dart';
 import 'video_quality_manager.dart';
 import 'audio_processor_service.dart';
 import 'api_service.dart';
-import 'signal_service.dart';
+import 'server_settings_service.dart';
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
-import 'message_listener_service.dart';
 import 'windows_e2ee_manager.dart';
 import 'sound_service.dart';
+import '../core/events/event_bus.dart' as app_events;
+import '../utils/storage_helper.dart'
+    if (dart.library.io) '../utils/storage_helper_stub.dart';
 
 /// LiveKit-based Video Conference Service with Signal Protocol E2EE
 ///
@@ -91,6 +93,11 @@ class VideoConferenceService extends ChangeNotifier {
       false; // Track if user is viewing full-screen (vs overlay mode)
   double _overlayPositionX = 100;
   double _overlayPositionY = 100;
+  bool _persistenceEnabled = true;
+
+  // EventBus subscriptions for E2EE key exchange (1-to-1 for all channels)
+  StreamSubscription? _keyRequestSubscription;
+  StreamSubscription? _keyResponseSubscription;
 
   // Stream controllers
   final _participantJoinedController =
@@ -155,27 +162,32 @@ class VideoConferenceService extends ChangeNotifier {
     debugPrint('═══════════════════════════════════════════════════════════');
     debugPrint('[VideoConf] ⏳ WAITING FOR USER AUTHENTICATION');
     debugPrint('[VideoConf] Current state:');
+
+    final signalClient = await ServerSettingsService.instance
+        .getOrCreateSignalClientWithStoredCredentials();
     debugPrint(
-      '[VideoConf]   - userId: ${SignalService.instance.currentUserId}',
+      '[VideoConf]   - userId: ${signalClient.getCurrentUserId?.call()}',
     );
     debugPrint(
-      '[VideoConf]   - deviceId: ${SignalService.instance.currentDeviceId}',
+      '[VideoConf]   - deviceId: ${signalClient.getCurrentDeviceId?.call()}',
     );
     debugPrint(
       '[VideoConf] ═══════════════════════════════════════════════════════════',
     );
 
     for (int i = 0; i < maxRetries; i++) {
-      if (SignalService.instance.currentUserId != null &&
-          SignalService.instance.currentDeviceId != null) {
+      final client = await ServerSettingsService.instance
+          .getOrCreateSignalClientWithStoredCredentials();
+      if (client.getCurrentUserId?.call() != null &&
+          client.getCurrentDeviceId?.call() != null) {
         debugPrint(
           '[VideoConf] ✓ User info available after ${i + 1} attempts (${(i + 1) * retryDelay.inMilliseconds}ms)',
         );
         debugPrint(
-          '[VideoConf]   - userId: ${SignalService.instance.currentUserId}',
+          '[VideoConf]   - userId: ${client.getCurrentUserId?.call()}',
         );
         debugPrint(
-          '[VideoConf]   - deviceId: ${SignalService.instance.currentDeviceId}',
+          '[VideoConf]   - deviceId: ${client.getCurrentDeviceId?.call()}',
         );
         debugPrint(
           '═══════════════════════════════════════════════════════════',
@@ -230,7 +242,7 @@ class VideoConferenceService extends ChangeNotifier {
         }
       }
 
-      SocketService().registerListener(
+      SocketService.instance.registerListener(
         'video:participants-info',
         listener,
         registrationName: 'VideoConferenceService',
@@ -239,7 +251,7 @@ class VideoConferenceService extends ChangeNotifier {
       debugPrint(
         '[VideoConf] 📤 Emitting video:check-participants for: $meetingId',
       );
-      SocketService().emit('video:check-participants', {
+      SocketService.instance.emit('video:check-participants', {
         'channelId': meetingId,
       });
 
@@ -251,7 +263,7 @@ class VideoConferenceService extends ChangeNotifier {
         },
       );
 
-      SocketService().unregisterListener(
+      SocketService.instance.unregisterListener(
         'video:participants-info',
         registrationName: 'VideoConferenceService',
       );
@@ -260,6 +272,30 @@ class VideoConferenceService extends ChangeNotifier {
     } catch (e) {
       debugPrint('[VideoConf] ❌ Error getting meeting participants: $e');
       return [];
+    }
+  }
+
+  void resetE2EEState({String? channelId, bool force = false}) {
+    if (!force && (_isConnected || _isConnecting)) {
+      return;
+    }
+
+    if (channelId != null) {
+      _currentChannelId = channelId;
+    }
+
+    _participantKeys.clear();
+    _channelSharedKey = null;
+    _keyTimestamp = null;
+    _isFirstParticipant = false;
+
+    if (_keyReceivedCompleter != null && !_keyReceivedCompleter!.isCompleted) {
+      _keyReceivedCompleter!.completeError(Exception('E2EE state reset'));
+    }
+    _keyReceivedCompleter = null;
+
+    if (_keyProvider != null) {
+      _keyProvider = null;
     }
   }
 
@@ -277,19 +313,11 @@ class VideoConferenceService extends ChangeNotifier {
       // CRITICAL: Wait for user info to be set (socket authentication)
       await _waitForUserInfo();
 
+      service.resetE2EEState(channelId: channelId, force: true);
+
       // Set channel ID
       service._currentChannelId = channelId;
       debugPrint('[PreJoin][TEST] ✓ Channel ID set on service instance');
-
-      // Register service with MessageListenerService to handle key requests
-      debugPrint(
-        '[PreJoin][TEST] 📝 Registering service with MessageListenerService...',
-      );
-      final messageListener = MessageListenerService.instance;
-      messageListener.registerVideoConferenceService(service);
-      debugPrint(
-        '[PreJoin][TEST] ✓ Service registered, ready to respond to key requests',
-      );
 
       // Initialize E2EE (generate key, create KeyProvider, initialize sender key)
       await service._initializeE2EE();
@@ -315,132 +343,86 @@ class VideoConferenceService extends ChangeNotifier {
   /// This is a static method so PreJoin screen can call it before joining
   /// Returns true if key was received successfully, false otherwise
   ///
-  /// For meetings (mtg_*, call_*): Uses sendItem (1-to-1 Signal) to request key from participants
-  /// For video channels: Uses sendGroupItem with SignalSenderKey
+  /// Uses 1-to-1 Signal Protocol messages for BOTH meetings and channels (peer-to-peer, fast, scalable)
   static Future<bool> requestE2EEKey(String channelId) async {
     final service = VideoConferenceService.instance;
-    final isMeeting = _isMeetingChannel(channelId);
 
     try {
       debugPrint('═══════════════════════════════════════════════════════════');
-      debugPrint('[VideoConf][TEST] 🔑 REQUESTING E2EE KEY');
+      debugPrint('[VideoConf][TEST] 🔑 REQUESTING E2EE KEY (1-to-1)');
       debugPrint('[VideoConf][TEST] Channel: $channelId');
-      debugPrint('[VideoConf][TEST] Is Meeting: $isMeeting');
 
       // CRITICAL: Wait for user info to be set (socket authentication)
       await _waitForUserInfo();
+
+      service.resetE2EEState(channelId: channelId, force: true);
 
       // ⚠️ CRITICAL: Set channel ID so response handler knows which channel this is for
       service._currentChannelId = channelId;
       debugPrint('[VideoConf][TEST] ✓ Channel ID set on service instance');
 
-      // ⚠️ CRITICAL: Register this service instance with MessageListenerService
-      // so it receives E2EE key responses
-      debugPrint(
-        '[VideoConf][TEST] 📝 Registering service with MessageListenerService...',
-      );
-      final messageListener = MessageListenerService.instance;
-      messageListener.registerVideoConferenceService(service);
-      debugPrint(
-        '[VideoConf][TEST] ✓ Service registered, ready to receive key responses',
-      );
-
       final requestTimestamp = DateTime.now().millisecondsSinceEpoch;
 
-      // Get current user ID from SignalService
-      final userId = SignalService.instance.currentUserId ?? 'unknown';
+      // Get current user ID from SignalClient
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClientWithStoredCredentials();
+      final userId = signalClient.getCurrentUserId?.call() ?? 'unknown';
 
       debugPrint('[VideoConf][TEST] Requester ID: $userId');
       debugPrint('[VideoConf][TEST] Request Timestamp: $requestTimestamp');
-      debugPrint('[VideoConf][TEST] Message Type: meeting_e2ee_key_request');
 
-      if (isMeeting) {
-        // For meetings: Use sendItem (1-to-1 Signal encrypted messages)
-        // Get participants with E2EE key from server
-        debugPrint(
-          '[VideoConf][TEST] 🔍 Getting meeting participants with E2EE key...',
-        );
+      // Get ONE online participant with E2EE key from server (same for meetings and channels)
+      debugPrint(
+        '[VideoConf][TEST] 🔍 Getting online participants with E2EE key...',
+      );
 
-        final participants = await _getMeetingParticipantsWithKey(channelId);
+      final participants = await _getMeetingParticipantsWithKey(channelId);
 
-        if (participants.isEmpty) {
-          debugPrint(
-            '[VideoConf][TEST] ⚠️ No participants with E2EE key found',
-          );
+      if (participants.isEmpty) {
+        debugPrint('[VideoConf][TEST] ⚠️ No participants with E2EE key found');
+        return false;
+      }
+
+      debugPrint(
+        '[VideoConf][TEST] Found ${participants.length} participant(s) with key',
+      );
+
+      // Send key request to ONE participant via 1-to-1 Signal (peer-to-peer)
+      // This is fast, doesn't require sender key distribution, and scales well
+      final messagingClient = await ServerSettingsService.instance
+          .getOrCreateSignalClientWithStoredCredentials();
+
+      // Pick first non-self participant (or could pick random for load balancing)
+      String? targetParticipant = participants.first;
+      if (targetParticipant == userId) {
+        // If only participant is ourselves, try second one
+        if (participants.length > 1) {
+          targetParticipant = participants[1];
+        } else {
+          debugPrint('[VideoConf][TEST] ⚠️ Only participant with key is self');
           return false;
         }
-
-        debugPrint(
-          '[VideoConf][TEST] Found ${participants.length} participant(s) with key',
-        );
-
-        // Send key request to each participant via Signal sendItem
-        for (final participantUserId in participants) {
-          if (participantUserId == userId) continue; // Skip self
-
-          debugPrint(
-            '[VideoConf][TEST] 📤 Sending key request to $participantUserId via Signal sendItem',
-          );
-
-          await SignalService.instance.sendItem(
-            recipientUserId: participantUserId,
-            type: 'meeting_e2ee_key_request', // Special type, not stored
-            payload: jsonEncode({
-              'meetingId': channelId,
-              'requesterId': userId,
-              'timestamp': requestTimestamp,
-            }),
-            itemId: 'mtg_key_req_${requestTimestamp}_$participantUserId',
-          );
-        }
-
-        debugPrint(
-          '[VideoConf][TEST] ✓ Key requests sent via Signal Protocol (1-to-1)',
-        );
-      } else {
-        // For video channels: Use sendGroupItem with SignalSenderKey
-        debugPrint(
-          '[VideoConf][TEST] 🔧 Initializing sender key for channel...',
-        );
-        try {
-          await SignalService.instance.createGroupSenderKey(channelId);
-          debugPrint('[VideoConf][TEST] ✓ Sender key initialized');
-        } catch (e) {
-          debugPrint(
-            '[VideoConf][TEST] ⚠️ Sender key initialization failed: $e',
-          );
-          try {
-            final loaded = await SignalService.instance.loadSenderKeyFromServer(
-              channelId: channelId,
-              userId: SignalService.instance.currentUserId!,
-              deviceId: SignalService.instance.currentDeviceId!,
-              forceReload: true,
-            );
-            if (loaded) {
-              debugPrint('[VideoConf][TEST] ✓ Sender key restored from server');
-            }
-          } catch (recoveryError) {
-            debugPrint(
-              '[VideoConf][TEST] ⚠️ Failed to load from server: $recoveryError',
-            );
-          }
-        }
-
-        // Send key request via Signal Protocol (encrypted group message)
-        await SignalService.instance.sendGroupItem(
-          channelId: channelId,
-          message: jsonEncode({
-            'requesterId': userId,
-            'timestamp': requestTimestamp,
-          }),
-          itemId: 'video_key_req_$requestTimestamp',
-          type: 'video_e2ee_key_request',
-        );
-
-        debugPrint(
-          '[VideoConf][TEST] ✓ Key request sent via Signal Protocol (group)',
-        );
       }
+
+      debugPrint(
+        '[VideoConf][TEST] 📤 Sending key request to $targetParticipant via 1-to-1 Signal',
+      );
+
+      await messagingClient.messagingService.send1to1Message(
+        recipientUserId: targetParticipant,
+        type:
+            'meeting_e2ee_key_request', // Use meeting type for ALL 1-to-1 key exchanges
+        payload: jsonEncode({
+          'channelId': channelId,
+          'requesterId': userId,
+          'timestamp': requestTimestamp,
+        }),
+        itemId: 'key_req_${requestTimestamp}_$targetParticipant',
+      );
+
+      debugPrint(
+        '[VideoConf][TEST] ✓ Key request sent via 1-to-1 Signal Protocol (peer-to-peer, no sender key needed)',
+      );
 
       debugPrint(
         '[VideoConf][TEST] ⏳ Waiting for key response (10 second timeout)...',
@@ -459,7 +441,7 @@ class VideoConferenceService extends ChangeNotifier {
         service._keyReceivedCompleter = null;
       }
 
-      // Wait for key response (handled by MessageListenerService)
+      // Wait for key response (handled by EventBus listeners)
       service._keyReceivedCompleter = Completer<bool>();
 
       // Timeout after 10 seconds
@@ -517,53 +499,12 @@ class VideoConferenceService extends ChangeNotifier {
         '[VideoConf][TEST] Is First Participant: $_isFirstParticipant',
       );
 
-      // ⚠️ IMPORTANT: Initialize sender key for responding to key requests
-      // First participant needs sender key to send key responses to new joiners
-      // For meetings: Skip sender key - we use 1-to-1 Signal messages instead
-      if (_currentChannelId != null && !_isMeetingChannel(_currentChannelId!)) {
-        debugPrint(
-          '[VideoConf][TEST] 🔧 Initializing sender key for channel (video channel)...',
-        );
-        try {
-          // Validate sender key - will check server if corrupted locally
-          await SignalService.instance.createGroupSenderKey(_currentChannelId!);
-          debugPrint(
-            '[VideoConf][TEST] ✓ Sender key initialized (ready to respond to key requests)',
-          );
-        } catch (e) {
-          debugPrint(
-            '[VideoConf][TEST] ⚠️ Sender key initialization failed: $e',
-          );
-          // Try to recover by loading from server
-          try {
-            debugPrint(
-              '[VideoConf][TEST] Attempting to load sender key from server...',
-            );
-            final loaded = await SignalService.instance.loadSenderKeyFromServer(
-              channelId: _currentChannelId!,
-              userId: SignalService.instance.currentUserId!,
-              deviceId: SignalService.instance.currentDeviceId!,
-              forceReload: true,
-            );
-            if (loaded) {
-              debugPrint('[VideoConf][TEST] ✓ Sender key restored from server');
-            } else {
-              debugPrint(
-                '[VideoConf][TEST] ⚠️ No sender key on server - will be created on first send',
-              );
-            }
-          } catch (recoveryError) {
-            debugPrint(
-              '[VideoConf][TEST] ⚠️ Failed to load from server: $recoveryError',
-            );
-            // Will be created automatically during sendGroupItem if needed
-          }
-        }
-      } else if (_currentChannelId != null) {
-        debugPrint(
-          '[VideoConf][TEST] ℹ️ Meeting detected - skipping sender key (using 1-to-1 Signal)',
-        );
-      }
+      // NOTE: No sender key setup needed for E2EE key exchange anymore!
+      // We now use 1-to-1 Signal Protocol messages for BOTH meetings and channels
+      // This is faster, scales better, and doesn't require sender key distribution
+      debugPrint(
+        '[VideoConf][TEST] ℹ️ Skipping sender key setup for key exchange (using 1-to-1 Signal for all channels)',
+      );
 
       // Create BaseKeyProvider for E2EE
       // Use LiveKit's built-in E2EE support properly
@@ -626,7 +567,9 @@ class VideoConferenceService extends ChangeNotifier {
         );
 
         // Send key request via Signal Protocol (encrypted group message)
-        await SignalService.instance.sendGroupItem(
+        final requestClient = await ServerSettingsService.instance
+            .getOrCreateSignalClientWithStoredCredentials();
+        await requestClient.messagingService.sendGroupItem(
           channelId: _currentChannelId!,
           message: jsonEncode({
             'type': 'video_key_request',
@@ -645,7 +588,9 @@ class VideoConferenceService extends ChangeNotifier {
       // Send the shared key via Signal Protocol (encrypted group message)
       final keyBase64 = base64Encode(_channelSharedKey!);
 
-      await SignalService.instance.sendGroupItem(
+      final responseClient = await ServerSettingsService.instance
+          .getOrCreateSignalClientWithStoredCredentials();
+      await responseClient.messagingService.sendGroupItem(
         channelId: _currentChannelId!,
         message: jsonEncode({
           'targetUserId': participantUserId,
@@ -813,15 +758,19 @@ class VideoConferenceService extends ChangeNotifier {
   }
 
   /// Handle incoming key request from another participant
-  /// Send our SHARED CHANNEL KEY to them via Signal Protocol
-  /// For meetings: Uses sendItem (1-to-1 Signal)
-  /// For video channels: Uses sendGroupItem with SignalSenderKey
-  Future<void> handleKeyRequest(String requesterId, {String? meetingId}) async {
+  /// Send our SHARED CHANNEL KEY to them via 1-to-1 Signal Protocol (peer-to-peer)
+  /// Uses 1-to-1 for BOTH meetings and channels (fast, no sender key distribution needed)
+  Future<void> handleKeyRequest(
+    String requesterId, {
+    String? channelId,
+    int? requesterDeviceId,
+  }) async {
     try {
       debugPrint('═══════════════════════════════════════════════════════════');
-      debugPrint('[VideoConf][TEST] 📬 HANDLING KEY REQUEST');
+      debugPrint('[VideoConf][TEST] 📬 HANDLING KEY REQUEST (1-to-1)');
       debugPrint('[VideoConf][TEST] Requester: $requesterId');
-      debugPrint('[VideoConf][TEST] Meeting ID: $meetingId');
+      debugPrint('[VideoConf][TEST] Requester Device ID: $requesterDeviceId');
+      debugPrint('[VideoConf][TEST] Channel ID: $channelId');
       debugPrint('[VideoConf][TEST] Our Timestamp: $_keyTimestamp');
       debugPrint(
         '[VideoConf][TEST] Is First Participant: $_isFirstParticipant',
@@ -845,87 +794,39 @@ class VideoConferenceService extends ChangeNotifier {
         return;
       }
 
-      // Send our SHARED CHANNEL KEY (not a new key!) with ORIGINAL timestamp via Signal Protocol
+      // Send our SHARED CHANNEL KEY (not a new key!) with ORIGINAL timestamp via 1-to-1 Signal
       final keyBase64 = base64Encode(_channelSharedKey!);
       final keyPreview = keyBase64.substring(0, 16);
-      final itemId =
-          'video_key_response_${DateTime.now().millisecondsSinceEpoch}';
+      final itemId = 'key_response_${DateTime.now().millisecondsSinceEpoch}';
 
-      debugPrint('[VideoConf][TEST] 📤 Sending key response...');
+      debugPrint('[VideoConf][TEST] 📤 Sending key response (1-to-1)...');
       debugPrint('[VideoConf][TEST] Key Preview: $keyPreview...');
       debugPrint(
         '[VideoConf][TEST] ORIGINAL Timestamp: $_keyTimestamp (NOT new timestamp!)',
       );
 
-      // Check if this is a meeting key request
-      final isMeeting =
-          meetingId != null || _isMeetingChannel(_currentChannelId!);
+      // Always use 1-to-1 Signal Protocol (peer-to-peer, fast, no sender key distribution)
+      final msgClient = await ServerSettingsService.instance
+          .getOrCreateSignalClientWithStoredCredentials();
+      await msgClient.messagingService.send1to1Message(
+        recipientUserId: requesterId,
+        type:
+            'meeting_e2ee_key_response', // Use meeting type for ALL 1-to-1 key exchanges
+        payload: jsonEncode({
+          'channelId': channelId ?? _currentChannelId,
+          'encryptedKey': keyBase64,
+          'timestamp': _keyTimestamp,
+        }),
+        targetDeviceId:
+            requesterDeviceId, // Filter to specific device for peer-to-peer
+      );
 
-      if (isMeeting) {
-        // For meetings: Use sendItem (1-to-1 Signal encrypted messages)
+      debugPrint(
+        '[VideoConf][TEST] ✓ Key response sent via 1-to-1 Signal Protocol (peer-to-peer)',
+      );
+      if (requesterDeviceId != null) {
         debugPrint(
-          '[VideoConf][TEST] Message Type: meeting_e2ee_key_response (1-to-1)',
-        );
-
-        await SignalService.instance.sendItem(
-          recipientUserId: requesterId,
-          type: 'meeting_e2ee_key_response', // Special type, not stored
-          payload: jsonEncode({
-            'meetingId': meetingId ?? _currentChannelId,
-            'encryptedKey': keyBase64,
-            'timestamp': _keyTimestamp,
-          }),
-          itemId: itemId,
-        );
-
-        debugPrint(
-          '[VideoConf][TEST] ✓ Key response sent via Signal Protocol (1-to-1)',
-        );
-      } else {
-        // For video channels: Use sendGroupItem with SignalSenderKey
-        debugPrint(
-          '[VideoConf][TEST] Message Type: video_e2ee_key_response (group)',
-        );
-
-        // ⚠️ IMPORTANT: Ensure sender key exists before responding
-        debugPrint('[VideoConf][TEST] 🔧 Ensuring sender key exists...');
-        try {
-          await SignalService.instance.createGroupSenderKey(_currentChannelId!);
-          debugPrint('[VideoConf][TEST] ✓ Sender key ready');
-        } catch (e) {
-          debugPrint(
-            '[VideoConf][TEST] ⚠️ Sender key initialization failed: $e',
-          );
-          try {
-            final loaded = await SignalService.instance.loadSenderKeyFromServer(
-              channelId: _currentChannelId!,
-              userId: SignalService.instance.currentUserId!,
-              deviceId: SignalService.instance.currentDeviceId!,
-              forceReload: true,
-            );
-            if (loaded) {
-              debugPrint('[VideoConf][TEST] ✓ Sender key restored from server');
-            }
-          } catch (recoveryError) {
-            debugPrint(
-              '[VideoConf][TEST] ⚠️ Failed to load from server: $recoveryError',
-            );
-          }
-        }
-
-        await SignalService.instance.sendGroupItem(
-          channelId: _currentChannelId!,
-          message: jsonEncode({
-            'targetUserId': requesterId,
-            'encryptedKey': keyBase64,
-            'timestamp': _keyTimestamp,
-          }),
-          itemId: itemId,
-          type: 'video_e2ee_key_response',
-        );
-
-        debugPrint(
-          '[VideoConf][TEST] ✓ Key response sent via Signal Protocol (group)',
+          '[VideoConf][TEST] ✓ Sent to specific device: $requesterId:$requesterDeviceId',
         );
       }
 
@@ -939,21 +840,31 @@ class VideoConferenceService extends ChangeNotifier {
     }
   }
 
-  /// Handle meeting E2EE key request callback (from SignalService)
-  /// Called when another meeting participant requests our E2EE key via 1-to-1 Signal
-  void _handleMeetingE2EEKeyRequest(Map<String, dynamic> data) {
+  /// Handle E2EE key request callback (from EventBus meetingKeyRequest)
+  /// Called when another participant requests the E2EE key via 1-to-1 Signal
+  /// Handles BOTH meetings and video channels (unified 1-to-1 approach)
+  Future<void> _handleMeetingE2EEKeyRequest(Map<String, dynamic> data) async {
     debugPrint('═══════════════════════════════════════════════════════════');
-    debugPrint('[VideoConf] 📨 Meeting E2EE key request callback received');
+    debugPrint('[VideoConf] 📨 E2EE key request callback received (1-to-1)');
     debugPrint('[VideoConf] Data: $data');
 
     final requesterId = data['requesterId'] as String?;
-    final meetingId = data['meetingId'] as String?;
+    final channelId =
+        data['channelId'] as String? ??
+        data['meetingId'] as String?; // Support both field names
     final senderId = data['senderId'] as String?;
-    final senderDeviceId = data['senderDeviceId'];
+    final senderDeviceIdRaw = data['senderDeviceId'];
+    final senderDeviceId = senderDeviceIdRaw is int
+        ? senderDeviceIdRaw
+        : (senderDeviceIdRaw != null
+              ? int.tryParse(senderDeviceIdRaw.toString())
+              : null);
 
     // Skip our own requests
-    final currentUserId = SignalService.instance.currentUserId;
-    final currentDeviceId = SignalService.instance.currentDeviceId;
+    final signalClient = await ServerSettingsService.instance
+        .getOrCreateSignalClientWithStoredCredentials();
+    final currentUserId = signalClient.getCurrentUserId();
+    final currentDeviceId = signalClient.getCurrentDeviceId();
     if (senderId == currentUserId && senderDeviceId == currentDeviceId) {
       debugPrint('[VideoConf] ℹ️ Ignoring own key request (same device)');
       debugPrint('═══════════════════════════════════════════════════════════');
@@ -967,19 +878,26 @@ class VideoConferenceService extends ChangeNotifier {
       return;
     }
 
-    // Send our key to the requester
-    debugPrint('[VideoConf] ✓ Responding with our E2EE key...');
-    handleKeyRequest(requesterId ?? senderId ?? '', meetingId: meetingId);
+    // Send our key to the requester (1-to-1, peer-to-peer)
+    debugPrint('[VideoConf] ✓ Responding with our E2EE key (1-to-1)...');
+    handleKeyRequest(
+      requesterId ?? senderId ?? '',
+      channelId: channelId,
+      requesterDeviceId: senderDeviceId,
+    );
   }
 
-  /// Handle meeting E2EE key response callback (from SignalService)
-  /// Called when another meeting participant sends us the E2EE key via 1-to-1 Signal
-  void _handleMeetingE2EEKeyResponse(Map<String, dynamic> data) {
+  /// Handle E2EE key response callback (from SignalClient.callbackManager)
+  /// Called when another participant sends us the E2EE key via 1-to-1 Signal
+  /// Handles BOTH meetings and video channels (unified 1-to-1 approach)
+  Future<void> _handleMeetingE2EEKeyResponse(Map<String, dynamic> data) async {
     debugPrint('═══════════════════════════════════════════════════════════');
-    debugPrint('[VideoConf] 🔑 Meeting E2EE key response callback received');
+    debugPrint('[VideoConf] 🔑 E2EE key response callback received (1-to-1)');
     debugPrint('[VideoConf] Data: $data');
 
-    final meetingId = data['meetingId'] as String?;
+    final channelId =
+        data['channelId'] as String? ??
+        data['meetingId'] as String?; // Support both field names
     final encryptedKey = data['encryptedKey'] as String?;
     final timestamp = data['timestamp'] as int?;
     final senderId = data['senderId'] as String?;
@@ -995,9 +913,74 @@ class VideoConferenceService extends ChangeNotifier {
     handleE2EEKey(
       senderUserId: senderId ?? '',
       encryptedKey: encryptedKey,
-      channelId: meetingId ?? _currentChannelId ?? '',
+      channelId: channelId ?? _currentChannelId ?? '',
       timestamp: timestamp,
     );
+  }
+
+  /// Register E2EE EventBus listeners early (for PreJoin phase)
+  /// Call this BEFORE requesting E2EE keys so handlers are ready to receive responses
+  /// NOTE: Now uses 1-to-1 Signal Protocol for ALL channels (meetings and video channels)
+  void registerE2EEListeners(String channelId) {
+    debugPrint(
+      '[VideoConf] 📝 Registering E2EE EventBus listeners for: $channelId',
+    );
+
+    // Store the channel ID for listener filtering
+    _currentChannelId = channelId;
+
+    // Use meetingKey listeners for ALL channels (since we're using 1-to-1 for all now)
+    debugPrint(
+      '[VideoConf] Registering 1-to-1 E2EE listeners (for all channel types)',
+    );
+
+    _keyRequestSubscription?.cancel();
+    _keyRequestSubscription = app_events.EventBus.instance
+        .on(app_events.AppEvent.meetingKeyRequest)
+        .listen((data) {
+          _handleMeetingE2EEKeyRequest(data as Map<String, dynamic>);
+        });
+
+    _keyResponseSubscription?.cancel();
+    _keyResponseSubscription = app_events.EventBus.instance
+        .on(app_events.AppEvent.meetingKeyResponse)
+        .listen((data) {
+          _handleMeetingE2EEKeyResponse(data as Map<String, dynamic>);
+        });
+
+    debugPrint(
+      '[VideoConf] ✓ E2EE EventBus listeners registered (1-to-1 peer-to-peer)',
+    );
+  }
+
+  Future<void> _loadGuestE2EEKeyFromStorage() async {
+    if (!kIsWeb) return;
+
+    try {
+      final keyBase64 = getSessionStorageItem('livekit_e2ee_key');
+      if (keyBase64 == null || keyBase64.isEmpty) {
+        debugPrint('[VideoConf] ⚠️ No guest E2EE key found in session storage');
+        return;
+      }
+
+      _channelSharedKey = base64Decode(keyBase64);
+
+      final timestampRaw = getSessionStorageItem('livekit_e2ee_key_timestamp');
+      final parsedTimestamp = timestampRaw != null && timestampRaw.isNotEmpty
+          ? DateTime.tryParse(timestampRaw)
+          : null;
+
+      _keyTimestamp =
+          parsedTimestamp?.millisecondsSinceEpoch ??
+          DateTime.now().millisecondsSinceEpoch;
+      _isFirstParticipant = false;
+
+      debugPrint(
+        '[VideoConf] ✓ Loaded guest E2EE key from session storage (timestamp: $_keyTimestamp)',
+      );
+    } catch (e) {
+      debugPrint('[VideoConf] ⚠️ Failed to load guest E2EE key: $e');
+    }
   }
 
   /// Join a video conference room
@@ -1032,40 +1015,40 @@ class VideoConferenceService extends ChangeNotifier {
       _isOverlayVisible = false; // Start hidden - user is in full-view
 
       notifyListeners();
+      _savePersistence();
 
       debugPrint('[VideoConf] Joining room for channel: $channelId');
 
-      // CRITICAL: Signal Service must be initialized for E2EE key exchange
+      // CRITICAL: SignalClient must be available for E2EE key exchange
       // Skip for external guests who don't have Signal Protocol
-      if (!isExternalGuest && !SignalService.instance.isInitialized) {
-        throw Exception(
-          'Signal Service must be initialized before joining video call. '
-          'Key exchange requires Signal Protocol encryption.',
-        );
+      if (!isExternalGuest) {
+        try {
+          await ServerSettingsService.instance
+              .getOrCreateSignalClientWithStoredCredentials();
+        } catch (e) {
+          throw Exception(
+            'SignalClient not available. Cannot perform E2EE key exchange. Error: $e',
+          );
+        }
       }
 
       if (!isExternalGuest) {
-        debugPrint('[VideoConf] ✓ Signal Service ready for E2EE key exchange');
+        debugPrint('[VideoConf] ✓ SignalClient ready for E2EE key exchange');
 
-        // For meetings: Register callbacks for E2EE key exchange via 1-to-1 Signal messages
-        if (_isMeetingChannel(channelId)) {
+        // Register EventBus listeners for E2EE key exchange (if not already registered)
+        if (_keyRequestSubscription == null ||
+            _keyResponseSubscription == null) {
+          registerE2EEListeners(channelId);
+        } else {
           debugPrint(
-            '[VideoConf] 📝 Registering meeting E2EE callbacks for: $channelId',
+            '[VideoConf] E2EE listeners already registered (from PreJoin)',
           );
-          SignalService.instance.registerMeetingE2EEKeyRequestCallback(
-            channelId,
-            (data) => _handleMeetingE2EEKeyRequest(data),
-          );
-          SignalService.instance.registerMeetingE2EEKeyResponseCallback(
-            channelId,
-            (data) => _handleMeetingE2EEKeyResponse(data),
-          );
-          debugPrint('[VideoConf] ✓ Meeting E2EE callbacks registered');
         }
       } else {
         debugPrint(
           '[VideoConf] 🔓 External guest mode - skipping Signal Protocol setup',
         );
+        await _loadGuestE2EEKeyFromStorage();
       }
 
       // Initialize E2EE ONLY if we don't already have a key AND not an external guest
@@ -1076,28 +1059,52 @@ class VideoConferenceService extends ChangeNotifier {
         );
         await _initializeE2EE();
       } else {
-        debugPrint(
-          '[VideoConf] E2EE key already received (timestamp: $_keyTimestamp)',
-        );
-        debugPrint(
-          '[VideoConf] Skipping initialization - will use existing key',
-        );
+        if (isExternalGuest && _channelSharedKey == null) {
+          debugPrint(
+            '[VideoConf] ⚠️ External guest has no E2EE key - joining without frame encryption',
+          );
+        } else {
+          debugPrint(
+            '[VideoConf] E2EE key already received (timestamp: $_keyTimestamp)',
+          );
+          debugPrint(
+            '[VideoConf] Skipping initialization - will use existing key',
+          );
+        }
 
         // Still need to ensure sender key exists for this participant
-        if (_currentChannelId != null) {
-          debugPrint(
-            '[VideoConf] 🔧 Ensuring sender key exists for channel...',
-          );
-          try {
-            await SignalService.instance.createGroupSenderKey(
-              _currentChannelId!,
+        if (!isExternalGuest) {
+          final joinClient = await ServerSettingsService.instance
+              .getOrCreateSignalClientWithStoredCredentials();
+          if (_currentChannelId != null &&
+              !_isMeetingChannel(_currentChannelId!)) {
+            debugPrint(
+              '[VideoConf] 🔧 Ensuring sender key exists for channel...',
             );
-            debugPrint('[VideoConf] ✓ Sender key ready');
-          } catch (e) {
-            if (e.toString().contains('already exists')) {
-              debugPrint('[VideoConf] ℹ️ Sender key already exists (OK)');
-            } else {
-              debugPrint('[VideoConf] ⚠️ Sender key error (continuing): $e');
+            try {
+              final activeMemberIds = <String>{};
+              activeMemberIds.addAll(
+                _room?.remoteParticipants.keys ?? <String>[],
+              );
+              final currentUserId = joinClient.getCurrentUserId?.call();
+              if (currentUserId != null) {
+                activeMemberIds.add(currentUserId);
+              }
+
+              await joinClient.messagingService.ensureSenderKeyForGroup(
+                _currentChannelId!,
+                force: true, // Force redistribution when joining room
+                activeMemberIds: activeMemberIds.isEmpty
+                    ? null
+                    : activeMemberIds.toList(),
+              );
+              debugPrint('[VideoConf] ✓ Sender key ready');
+            } catch (e) {
+              if (e.toString().contains('already exists')) {
+                debugPrint('[VideoConf] ℹ️ Sender key already exists (OK)');
+              } else {
+                debugPrint('[VideoConf] ⚠️ Sender key error (continuing): $e');
+              }
             }
           }
         }
@@ -1157,7 +1164,10 @@ class VideoConferenceService extends ChangeNotifier {
         debugPrint('[VideoConf] Requesting token for channel: $channelId');
       }
 
-      final response = await ApiService.post(tokenEndpoint, data: requestData);
+      final response = await ApiService.instance.post(
+        tokenEndpoint,
+        data: requestData,
+      );
 
       debugPrint('[VideoConf] Token response status: ${response.statusCode}');
 
@@ -1544,7 +1554,7 @@ class VideoConferenceService extends ChangeNotifier {
     // Emit Socket.IO leave event on unexpected disconnection
     if (_currentChannelId != null) {
       try {
-        SocketService().emit('video:leave-channel', {
+        SocketService.instance.emit('video:leave-channel', {
           'channelId': _currentChannelId,
         });
         debugPrint(
@@ -1593,20 +1603,22 @@ class VideoConferenceService extends ChangeNotifier {
     try {
       debugPrint('[VideoConf] Leaving room');
 
-      // Unregister meeting E2EE callbacks if this was a meeting
+      // Unregister meeting E2EE EventBus listeners if this was a meeting
       if (_currentChannelId != null && _isMeetingChannel(_currentChannelId!)) {
         debugPrint(
-          '[VideoConf] 📝 Unregistering meeting E2EE callbacks for: $_currentChannelId',
+          '[VideoConf] 📝 Unregistering meeting E2EE EventBus listeners for: $_currentChannelId',
         );
-        SignalService.instance.unregisterMeetingE2EECallbacks(
-          _currentChannelId!,
-        );
+        _keyRequestSubscription?.cancel();
+        _keyRequestSubscription = null;
+        _keyResponseSubscription?.cancel();
+        _keyResponseSubscription = null;
+        debugPrint('[VideoConf] ✓ E2EE listeners unregistered (1-to-1)');
       }
 
       // Emit Socket.IO leave event BEFORE disconnecting from LiveKit
       if (_currentChannelId != null) {
         try {
-          SocketService().emit('video:leave-channel', {
+          SocketService.instance.emit('video:leave-channel', {
             'channelId': _currentChannelId,
           });
           debugPrint('[VideoConf] ✓ Emitted video:leave-channel to server');
@@ -1711,8 +1723,15 @@ class VideoConferenceService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Disable persistence for companion windows to avoid shared state clashes
+  void setPersistenceEnabled(bool enabled) {
+    _persistenceEnabled = enabled;
+  }
+
   /// NEW: Save state to LocalStorage for rejoin
   Future<void> _savePersistence() async {
+    if (!_persistenceEnabled) return;
+
     try {
       final prefs = await SharedPreferences.getInstance();
 
@@ -1741,6 +1760,8 @@ class VideoConferenceService extends ChangeNotifier {
 
   /// NEW: Clear persistence from LocalStorage
   Future<void> _clearPersistence() async {
+    if (!_persistenceEnabled) return;
+
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('shouldRejoin');

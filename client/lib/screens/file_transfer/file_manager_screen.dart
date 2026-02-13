@@ -15,12 +15,12 @@ import '../../services/file_transfer/chunking_service.dart';
 import '../../services/file_transfer/encryption_service.dart';
 import '../../services/file_transfer/file_transfer_config.dart';
 import '../../services/file_transfer/file_transfer_service.dart';
-import '../../services/signal_service.dart';
 import '../../services/socket_service_native.dart'
     if (dart.library.html) '../../services/socket_service.dart';
 import '../../services/api_service.dart';
 import '../../services/server_config_native.dart'
     if (dart.library.html) '../../services/server_config_web.dart';
+import '../../services/user_profile_service.dart';
 import '../../providers/role_provider.dart';
 import '../../providers/file_transfer_stats_provider.dart';
 import '../../web_config.dart';
@@ -68,7 +68,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
 
   SocketFileClient _getSocketClient() {
     if (_socketClient == null) {
-      final socketService = SocketService();
+      final socketService = SocketService.instance;
       if (socketService.socket == null) {
         throw Exception('Socket not connected');
       }
@@ -1457,7 +1457,7 @@ class _AddFileProgressDialogState extends State<_AddFileProgressDialog> {
       // Step 6: Auto-announce file to server
       setState(() => _statusText = 'Announcing to network...');
       try {
-        final socketService = SocketService();
+        final socketService = SocketService.instance;
         if (socketService.socket != null) {
           final client = SocketFileClient();
 
@@ -1639,10 +1639,10 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
       }
 
       // Initialize ApiService
-      ApiService.init();
+      await ApiService.instance.init();
 
       // Get all users (excluding self)
-      final usersResp = await ApiService.get('/people/list');
+      final usersResp = await ApiService.instance.get('/people/list');
       if (usersResp.statusCode == 200) {
         final users = usersResp.data is List ? usersResp.data as List : [];
         for (final user in users) {
@@ -1662,7 +1662,7 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
       }
 
       // Get Signal channels (where I'm a member/owner)
-      final channelsResp = await ApiService.get(
+      final channelsResp = await ApiService.instance.get(
         '/client/channels?type=signal&limit=50',
       );
       if (channelsResp.statusCode == 200) {
@@ -1732,8 +1732,7 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
       // Encrypt file key with base64 (will be re-encrypted by Signal Protocol)
       final encryptedFileKey = base64Encode(fileKey);
 
-      final signalService = SignalService();
-      final socketService = SocketService();
+      final socketService = SocketService.instance;
 
       // Check if socket is connected
       if (socketService.socket == null) {
@@ -1745,7 +1744,6 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
       final fileTransferService = FileTransferService(
         storage: storage,
         socketFileClient: SocketFileClient(),
-        signalService: signalService,
       );
 
       if (_selectedType == 'user') {
@@ -1785,8 +1783,8 @@ class _ShareFileDialogState extends State<_ShareFileDialog> {
         final members = await roleProvider.getChannelMembers(channelId);
         if (!mounted) return;
 
-        // Get own userId from SignalService
-        final ownUserId = signalService.currentUserId;
+        // Get own userId from UserProfileService
+        final ownUserId = UserProfileService.instance.currentUserUuid;
 
         // Extract member userIds (excluding self)
         final channelMembers = members

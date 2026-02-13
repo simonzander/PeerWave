@@ -12,9 +12,9 @@ import '../../views/video_conference_view.dart';
 import '../../services/event_bus.dart';
 import '../../services/video_conference_service.dart';
 import '../../services/api_service.dart';
+import '../../services/user_profile_service.dart';
 import '../../services/activities_service.dart';
 import '../../services/starred_channels_service.dart';
-import '../../services/signal_service.dart';
 
 /// Channels View Page
 ///
@@ -116,15 +116,15 @@ class _ChannelsViewPageState extends BaseViewState<ChannelsViewPage> {
           await ActivitiesService.getWebRTCChannelParticipants();
 
       // Get all member/owner channels
-      ApiService.init();
-      final resp = await ApiService.get('/client/channels?limit=1000');
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.get('/client/channels?limit=1000');
 
       if (resp.statusCode == 200) {
         final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
         final channels = (data['channels'] as List<dynamic>? ?? []);
 
         // Get current user ID for ownership
-        final currentUserId = SignalService.instance.currentUserId;
+        final currentUserId = UserProfileService.instance.currentUserUuid;
 
         final channelsList = channels.map((ch) {
           final channelMap = Map<String, dynamic>.from(ch as Map);

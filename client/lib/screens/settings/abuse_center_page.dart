@@ -29,7 +29,7 @@ class _AbuseCenterPageState extends State<AbuseCenterPage> {
       final url = _statusFilter == 'all'
           ? '/api/abuse-reports'
           : '/api/abuse-reports?status=$_statusFilter';
-      final response = await ApiService.get(url);
+      final response = await ApiService.instance.get(url);
       if (response.statusCode == 200) {
         setState(() {
           _reports = List<Map<String, dynamic>>.from(response.data);
@@ -48,7 +48,7 @@ class _AbuseCenterPageState extends State<AbuseCenterPage> {
 
   Future<void> _updateStatus(String reportUuid, String newStatus) async {
     try {
-      final response = await ApiService.put(
+      final response = await ApiService.instance.put(
         '/api/abuse-reports/$reportUuid/status',
         data: {'status': newStatus},
       );
@@ -95,7 +95,7 @@ class _AbuseCenterPageState extends State<AbuseCenterPage> {
     if (confirmed != true) return;
 
     try {
-      final response = await ApiService.delete(
+      final response = await ApiService.instance.delete(
         '/api/abuse-reports/$reportUuid',
         data: {'confirmed': true},
       );

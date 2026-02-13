@@ -11,16 +11,17 @@ import '../extensions/snackbar_extensions.dart';
 import '../services/api_service.dart';
 
 class AuthLayout extends StatefulWidget {
-  final String? clientId; // optional to align with web API
-  final bool fromApp;
-  final String? initialEmail;
-
+  // Deprecated legacy native login screen; kept to avoid breaking imports.
   const AuthLayout({
     super.key,
     this.clientId,
     this.fromApp = false,
     this.initialEmail,
   });
+
+  final String? clientId;
+  final bool fromApp;
+  final String? initialEmail;
 
   @override
   State<AuthLayout> createState() => _AuthLayoutState();
@@ -55,7 +56,7 @@ class _AuthLayoutState extends State<AuthLayout> {
         final deviceId = await _getDeviceId();
         if (token != null && serverUrl.isNotEmpty) {
           try {
-            final resp = await ApiService.post(
+            final resp = await ApiService.instance.post(
               '$serverUrl/magic/verify',
               data: {'token': token, 'deviceId': deviceId},
             );

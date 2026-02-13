@@ -51,7 +51,7 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
       _error = null;
     });
     try {
-      final resp = await ApiService.get(
+      final resp = await ApiService.instance.get(
         _serverUrl != null ? '$_serverUrl/webauthn/list' : '/webauthn/list',
       );
       if (resp.statusCode == 200 && resp.data != null) {
@@ -181,7 +181,7 @@ class _RegisterWebauthnPageState extends State<RegisterWebauthnPage> {
       _error = null;
     });
     try {
-      final resp = await ApiService.post(
+      final resp = await ApiService.instance.post(
         _serverUrl != null ? '$_serverUrl/webauthn/delete' : '/webauthn/delete',
         data: {'credentialId': credentialId},
       );

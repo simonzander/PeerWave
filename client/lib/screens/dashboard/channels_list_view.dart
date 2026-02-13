@@ -3,17 +3,16 @@ import 'package:go_router/go_router.dart';
 import '../../services/activities_service.dart';
 import '../../services/api_service.dart';
 import '../../services/video_conference_service.dart';
+import '../../services/user_profile_service.dart';
 import '../../services/starred_channels_service.dart';
-import '../../services/signal_service.dart';
 import '../../models/role.dart';
 import '../../providers/unread_messages_provider.dart';
 import '../../providers/navigation_state_provider.dart';
 import '../../widgets/animated_widgets.dart';
 import '../../theme/app_theme_constants.dart';
 import '../../services/storage/sqlite_message_store.dart';
+import '../../services/storage/sqlite_group_message_store.dart';
 import '../../services/event_bus.dart';
-import '../../services/sent_group_items_store.dart';
-import '../../services/decrypted_group_items_store.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
 
@@ -113,8 +112,8 @@ class _ChannelsListViewState extends State<ChannelsListView>
           await ActivitiesService.getWebRTCChannelParticipants();
 
       // Get all member/owner channels
-      ApiService.init();
-      final resp = await ApiService.get('/client/channels?limit=1000');
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.get('/client/channels?limit=1000');
 
       debugPrint('[CHANNELS_LIST] API Response status: ${resp.statusCode}');
 
@@ -134,7 +133,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
         );
 
         // Get current user ID to determine ownership
-        final currentUserId = SignalService.instance.currentUserId;
+        final currentUserId = UserProfileService.instance.currentUserUuid;
 
         _allChannels = channels.map((ch) {
           final channelMap = Map<String, dynamic>.from(ch as Map);
@@ -222,8 +221,8 @@ class _ChannelsListViewState extends State<ChannelsListView>
     setState(() => _loadingMoreDiscover = true);
 
     try {
-      ApiService.init();
-      final resp = await ApiService.get(
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.get(
         '/client/channels/discover?limit=$_discoverLimit&offset=$_discoverOffset',
       );
 
@@ -449,31 +448,25 @@ class _ChannelsListViewState extends State<ChannelsListView>
     debugPrint('[CHANNELS_LIST] Channel ID: $channelId');
 
     try {
-      // Delete from sent items store (old storage + SQLite)
-      debugPrint('[CHANNELS_LIST] Step 1: Deleting sent items...');
-      final sentStore = await SentGroupItemsStore.getInstance();
-      await sentStore.deleteChannelItems(channelId);
-      debugPrint('[CHANNELS_LIST] Step 2: Sent items deleted');
-
-      // Delete from received/decrypted items store (old storage + SQLite)
-      debugPrint('[CHANNELS_LIST] Step 3: Deleting received items...');
-      final receivedStore = await DecryptedGroupItemsStore.getInstance();
-      await receivedStore.deleteChannelItems(channelId);
-      debugPrint('[CHANNELS_LIST] Step 4: Received items deleted');
+      // Delete from group message store (SQLite)
+      debugPrint('[CHANNELS_LIST] Step 1: Deleting group messages...');
+      final groupMessageStore = await SqliteGroupMessageStore.getInstance();
+      await groupMessageStore.deleteChannelMessages(channelId);
+      debugPrint('[CHANNELS_LIST] Step 2: Group messages deleted');
 
       // Also delete from DM message store (in case any were stored there incorrectly)
-      debugPrint('[CHANNELS_LIST] Step 5: Cleaning up DM store...');
+      debugPrint('[CHANNELS_LIST] Step 3: Cleaning up DM store...');
       final messageStore = await SqliteMessageStore.getInstance();
       await messageStore.deleteChannel(channelId);
-      debugPrint('[CHANNELS_LIST] Step 6: DM store cleanup completed');
+      debugPrint('[CHANNELS_LIST] Step 4: DM store cleanup completed');
 
       // Remove from starred if it was starred
-      debugPrint('[CHANNELS_LIST] Step 7: Unstarring channel...');
+      debugPrint('[CHANNELS_LIST] Step 5: Unstarring channel...');
       await StarredChannelsService.instance.unstarChannel(channelId);
-      debugPrint('[CHANNELS_LIST] Step 8: Unstar completed');
+      debugPrint('[CHANNELS_LIST] Step 6: Unstar completed');
 
       // Emit event to update UI
-      debugPrint('[CHANNELS_LIST] Step 9: Emitting event...');
+      debugPrint('[CHANNELS_LIST] Step 7: Emitting event...');
       EventBus.instance.emit(AppEvent.conversationDeleted, {
         'channelId': channelId,
       });
@@ -1151,7 +1144,7 @@ class _ChannelsListViewState extends State<ChannelsListView>
     String channelType,
   ) async {
     try {
-      final resp = await ApiService.joinChannel(channelId);
+      final resp = await ApiService.instance.joinChannel(channelId);
 
       if (resp.statusCode == 200) {
         if (mounted) {
@@ -1339,9 +1332,9 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
   Future<void> _loadRoles() async {
     setState(() => isLoadingRoles = true);
     try {
-      ApiService.init();
+      await ApiService.instance.init();
       final scope = channelType == 'webrtc' ? 'channelWebRtc' : 'channelSignal';
-      final resp = await ApiService.get('/api/roles?scope=$scope');
+      final resp = await ApiService.instance.get('/api/roles?scope=$scope');
 
       if (resp.statusCode == 200) {
         final data = resp.data;
@@ -1505,8 +1498,8 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
     if (channelName.isEmpty || selectedRole == null) return;
 
     try {
-      ApiService.init();
-      final resp = await ApiService.createChannel(
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.createChannel(
         name: channelName,
         description: channelDescription,
         isPrivate: isPrivate,

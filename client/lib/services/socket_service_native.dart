@@ -2,11 +2,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../core/metrics/network_metrics.dart';
-import 'signal_service.dart';
 import 'server_config_native.dart';
 import 'auth_service_native.dart';
 import 'session_auth_service.dart';
 import 'clientid_native.dart';
+import 'server_settings_service.dart';
 
 /// Callback for handling socket unauthorized events
 typedef SocketUnauthorizedCallback = void Function();
@@ -23,8 +23,7 @@ void setSocketUnauthorizedHandler(SocketUnauthorizedCallback callback) {
 /// Receives notifications from all servers while user actively uses one
 class SocketService {
   static final SocketService _instance = SocketService._internal();
-  factory SocketService() => _instance;
-  SocketService._internal();
+  static SocketService get instance => _instance;
 
   // Map of serverId -> Socket instance (one socket per server)
   final Map<String, io.Socket> _sockets = {};
@@ -41,6 +40,13 @@ class SocketService {
   // Track wrapped callbacks per socket: serverId -> eventName -> registrationName -> wrappedCallback
   final Map<String, Map<String, Map<String, Function(dynamic)>>>
   _socketCallbacks = {};
+
+  /// Private constructor for singleton
+  SocketService._internal() {
+    debugPrint(
+      '[SOCKET SERVICE] 🏗️ Creating singleton instance (native multi-server)',
+    );
+  }
 
   // Get socket for active server
   io.Socket? get socket {
@@ -114,6 +120,23 @@ class SocketService {
   void setActiveServer(String serverId) {
     debugPrint('[SOCKET SERVICE] Setting active server: $serverId');
     _activeServerId = serverId;
+  }
+
+  /// Set server URL (web compatibility). Maps URL to active server when possible.
+  void setServerUrl(String serverUrl) {
+    final servers = ServerConfigService.getAllServers();
+    final match = servers.where((s) => s.serverUrl == serverUrl).toList();
+    if (match.isNotEmpty) {
+      setActiveServer(match.first.id);
+      debugPrint(
+        '[SOCKET SERVICE] Mapped server URL to active server: $serverUrl',
+      );
+      return;
+    }
+
+    debugPrint(
+      '[SOCKET SERVICE] No server found for URL: $serverUrl (native); leaving active server unchanged',
+    );
   }
 
   /// Connect to active server only (legacy compatibility)
@@ -342,18 +365,20 @@ class SocketService {
       return;
     }
 
-    if (data is Map &&
-        data['authenticated'] == true &&
-        data['uuid'] != null &&
-        data['deviceId'] != null) {
-      final deviceId = data['deviceId'] is int
-          ? data['deviceId']
-          : int.parse(data['deviceId'].toString());
+    if (data is Map && data['authenticated'] == true) {
+      // Store device ID from server authentication
+      if (data['deviceId'] != null) {
+        final deviceId = data['deviceId'] as int;
+        debugPrint(
+          '[SOCKET SERVICE] Storing device ID from server: $deviceId for server: $serverId',
+        );
 
-      // Only set current user info if this is the active server
-      if (serverId == _activeServerId) {
-        SignalService.instance.setCurrentUserInfo(data['uuid'], deviceId);
+        // Store in ServerSettingsService (in-memory cache)
+        ServerSettingsService.instance.setDeviceId(serverId, deviceId);
       }
+
+      // SignalClient gets user info via callbacks on initialization
+      // No need to set it here via deprecated SignalService
 
       // Send clientReady if listeners are registered
       if (_serverListenersRegistered[serverId] ?? false) {

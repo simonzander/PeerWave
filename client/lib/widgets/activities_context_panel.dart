@@ -49,7 +49,7 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
   }
 
   void _listenToSocketEvents() {
-    final socketService = SocketService();
+    final socketService = SocketService.instance;
     if (socketService.socket == null) {
       debugPrint('[ACTIVITIES_PANEL] Socket not connected');
       return;
@@ -404,7 +404,9 @@ class _ActivitiesContextPanelState extends State<ActivitiesContextPanel> {
     if (senderPicture != null && senderPicture.isNotEmpty) {
       return CircleAvatar(
         radius: 20,
-        backgroundImage: NetworkImage(ApiService.buildUrl(senderPicture)),
+        backgroundImage: NetworkImage(
+          ApiService.instance.buildUrl(senderPicture),
+        ),
         onBackgroundImageError: (_, _) {},
       );
     }

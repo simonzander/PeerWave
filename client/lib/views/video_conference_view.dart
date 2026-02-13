@@ -9,10 +9,9 @@ import 'package:go_router/go_router.dart';
 import 'dart:async';
 import 'dart:convert';
 import '../services/video_conference_service.dart';
-import '../services/message_listener_service.dart';
 import '../services/user_profile_service.dart';
 import '../services/api_service.dart';
-import '../services/signal_service.dart';
+import '../services/server_settings_service.dart';
 import '../services/call_service.dart';
 import '../screens/channel/channel_members_screen.dart';
 import '../screens/channel/channel_settings_screen.dart';
@@ -83,6 +82,10 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   Timer? _visibilityUpdateTimer;
   int _maxVisibleParticipants = 0;
   final Map<String, StreamSubscription> _audioSubscriptions = {};
+  bool _serviceListenerAttached = false;
+  int _lastRemoteParticipantCount = -1;
+  bool? _lastHasScreenShare;
+  String? _lastScreenShareParticipantId;
 
   // Profile cache to prevent flickering
   final Map<String, String> _displayNameCache = {};
@@ -134,15 +137,10 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         _service = Provider.of<VideoConferenceService>(context, listen: false);
         debugPrint('[VideoConferenceView] Service obtained from Provider');
 
-        // Register with MessageListenerService for E2EE key exchange
-        MessageListenerService.instance.registerVideoConferenceService(
-          _service!,
-        );
-        debugPrint(
-          '[VideoConferenceView] Registered VideoConferenceService with MessageListener',
-        );
+        _attachServiceListener();
 
         // Listen for participant joined events to track who actually joined
+        // AND to proactively distribute sender keys
         _service!.onParticipantJoined.listen((participant) {
           // LiveKit identity is "userId:deviceId" in this app.
           final identity = participant.identity;
@@ -157,6 +155,10 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
               '[VideoConferenceView] User $userId joined, removing from missed call list',
             );
           }
+
+          // SENDER KEY EXCHANGE: Proactively redistribute our sender key when new participant joins
+          // This ensures they have our key before they try to send us E2EE key requests
+          _redistributeSenderKeyForNewParticipant();
         });
 
         // Schedule join for after build completes (only if not already in call)
@@ -180,6 +182,41 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
 
     // Full-view mode is already set by navigateToCurrentChannelFullView() before navigation
     // So we don't need to call enterFullView() here anymore
+  }
+
+  void _attachServiceListener() {
+    if (_service == null || _serviceListenerAttached) return;
+
+    _service!.addListener(_onServiceUpdated);
+    _serviceListenerAttached = true;
+
+    _lastRemoteParticipantCount = _service!.remoteParticipants.length;
+    _lastHasScreenShare = _service!.hasActiveScreenShare;
+    _lastScreenShareParticipantId = _service!.currentScreenShareParticipantId;
+  }
+
+  void _onServiceUpdated() {
+    if (!mounted || _service == null) return;
+
+    final remoteCount = _service!.remoteParticipants.length;
+    final hasScreenShare = _service!.hasActiveScreenShare;
+    final screenShareId = _service!.currentScreenShareParticipantId;
+
+    final shouldRefresh =
+        remoteCount != _lastRemoteParticipantCount ||
+        hasScreenShare != _lastHasScreenShare ||
+        screenShareId != _lastScreenShareParticipantId;
+
+    if (!shouldRefresh) return;
+
+    _lastRemoteParticipantCount = remoteCount;
+    _lastHasScreenShare = hasScreenShare;
+    _lastScreenShareParticipantId = screenShareId;
+
+    _updateParticipantStates();
+    _updateVisibility(rebuild: false);
+
+    setState(() {});
   }
 
   /// Listen for call:declined socket events to handle timeouts
@@ -410,11 +447,10 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       });
     }
 
-    // Unregister from MessageListenerService
-    MessageListenerService.instance.unregisterVideoConferenceService();
-    debugPrint(
-      '[VideoConferenceView] Unregistered VideoConferenceService from MessageListener',
-    );
+    if (_serviceListenerAttached) {
+      _service?.removeListener(_onServiceUpdated);
+      _serviceListenerAttached = false;
+    }
 
     // No need to remove listener - Consumer handles it
     // _service?.removeListener(_onServiceUpdate); // Removed
@@ -435,17 +471,22 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
     }
 
     try {
-      ApiService.init();
-      final resp = await ApiService.get('/client/channels/${widget.channelId}');
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.get(
+        '/client/channels/${widget.channelId}',
+      );
 
       if (resp.statusCode == 200) {
         final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
         if (mounted) {
+          final signalClient = await ServerSettingsService.instance
+              .getOrCreateSignalClientWithStoredCredentials();
+          final currentUserId = signalClient.getCurrentUserId?.call();
+
           setState(() {
             _channelData = Map<String, dynamic>.from(data);
 
             // Check if current user is owner
-            final currentUserId = SignalService.instance.currentUserId;
             _isOwner =
                 currentUserId != null &&
                 _channelData!['owner'] == currentUserId;
@@ -479,10 +520,12 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
         'timestamp': DateTime.now().toIso8601String(),
       };
 
-      await SignalService.instance.sendItem(
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClientWithStoredCredentials();
+      await signalClient.messagingService.send1to1Message(
         recipientUserId: userId,
         type: 'missingcall',
-        payload: payload,
+        payload: jsonEncode(payload),
       );
 
       debugPrint(
@@ -492,6 +535,49 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       debugPrint(
         '[VideoConferenceView] Error sending missed call to $userId: $e',
       );
+    }
+  }
+
+  /// Proactively redistribute sender key when a new participant joins
+  /// This ensures the new participant has our sender key immediately
+  /// before they try to send E2EE key requests
+  Future<void> _redistributeSenderKeyForNewParticipant() async {
+    try {
+      debugPrint(
+        '[VideoConferenceView] 🔄 New participant joined - redistributing sender key',
+      );
+
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClientWithStoredCredentials();
+
+      final activeMemberIds = <String>{};
+      final currentUserId = signalClient.getCurrentUserId?.call();
+      if (currentUserId != null) {
+        activeMemberIds.add(currentUserId);
+      }
+      activeMemberIds.addAll(
+        VideoConferenceService.instance.remoteParticipants.map(
+          (participant) => participant.identity,
+        ),
+      );
+
+      // Force redistribute sender key to all participants (including new one)
+      await signalClient.messagingService.ensureSenderKeyForGroup(
+        widget.channelId,
+        force: true, // Force redistribution
+        activeMemberIds: activeMemberIds.isEmpty
+            ? null
+            : activeMemberIds.toList(),
+      );
+
+      debugPrint(
+        '[VideoConferenceView] ✓ Sender key redistributed for new participant',
+      );
+    } catch (e) {
+      debugPrint(
+        '[VideoConferenceView] ⚠️ Error redistributing sender key: $e',
+      );
+      // Don't throw - this is a best-effort operation
     }
   }
 
@@ -517,8 +603,8 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
   }
 
   /// Update visibility based on screen size and participant activity
-  void _updateVisibility() {
-    if (_service == null || _service!.room == null || !mounted) return;
+  bool _updateVisibility({bool rebuild = true}) {
+    if (_service == null || _service!.room == null || !mounted) return false;
 
     final screenSize = MediaQuery.of(context).size;
     final hasScreenShare = _service!.hasActiveScreenShare;
@@ -534,8 +620,13 @@ class _VideoConferenceViewState extends State<VideoConferenceView> {
       _maxVisibleParticipants = newMaxVisible;
       // Update participant states
       _updateParticipantStates();
-      setState(() {});
+      if (rebuild) {
+        setState(() {});
+      }
+      return true;
     }
+
+    return false;
   }
 
   /// Update participant states with current participants

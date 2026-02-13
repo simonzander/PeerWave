@@ -47,7 +47,7 @@ class _BackupCodeListPageState extends State<BackupCodeListPage> {
           : '/backupcode/list';
       debugPrint('[BackupCode] Fetching from: $endpoint');
 
-      final resp = await ApiService.get(endpoint);
+      final resp = await ApiService.instance.get(endpoint);
       if (resp.statusCode == 200 && resp.data != null) {
         final data = resp.data is String ? json.decode(resp.data) : resp.data;
         if (data is Map && data['backupCodes'] is List) {

@@ -93,7 +93,7 @@ class _ReportAbuseScreenState extends State<ReportAbuseScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      final response = await ApiService.post(
+      final response = await ApiService.instance.post(
         '/api/report-abuse',
         data: {
           'reportedUuid': widget.reportedUuid,

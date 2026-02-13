@@ -65,7 +65,7 @@ class DatabaseHelper {
     }
 
     final deviceId = _deviceIdentity.deviceId;
-    final dbName = _databaseName;
+    //final dbName = _databaseName;
 
     // Return existing connection if available and ready
     if (_databases.containsKey(deviceId) && (_isReady[deviceId] ?? false)) {
