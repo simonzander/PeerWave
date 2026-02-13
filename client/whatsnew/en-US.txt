@@ -1,5 +1,8 @@
-🚀 What's New in PeerWave v1.3.4
+🚀 What's New in PeerWave v1.4.1
 
-🐛 Bug Fixes
-• update OTP generation to use a 5-digit format
+✨ New Features
+• Implement Picture-in-Picture (PiP) support for video calls
+• Enhance server configuration and session management
+• Enhance video conference features and improve participant management
+• Implement persistent session and signed pre-key stores
 
