@@ -24,10 +24,11 @@ import '../../screens/settings/abuse_center_page.dart';
 import '../../features/troubleshoot/pages/troubleshoot_page.dart';
 import '../../features/troubleshoot/state/troubleshoot_provider.dart';
 import '../../services/troubleshoot/troubleshoot_service.dart';
-import '../../services/signal_service.dart';
 
 // Role provider
 import '../../providers/role_provider.dart';
+import '../../services/server_settings_service.dart';
+import 'package:flutter/material.dart';
 
 /// Returns the settings routes wrapped in a ShellRoute with SettingsSidebar
 /// This includes all settings-related pages accessible from the app settings menu
@@ -81,15 +82,34 @@ ShellRoute getSettingsRoutes() {
       GoRoute(
         path: '/app/settings/troubleshoot',
         builder: (context, state) {
-          // Create troubleshoot provider with dependencies
-          final signalService = SignalService.instance;
-          final troubleshootService = TroubleshootService(
-            signalService: signalService,
-          );
+          // Use FutureBuilder to load SignalClient asynchronously
+          return FutureBuilder(
+            future: ServerSettingsService.instance
+                .getOrCreateSignalClientWithStoredCredentials(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-          return ChangeNotifierProvider(
-            create: (_) => TroubleshootProvider(service: troubleshootService),
-            child: const TroubleshootPage(),
+              if (snapshot.hasError) {
+                return Center(
+                  child: Text('Error loading troubleshoot: ${snapshot.error}'),
+                );
+              }
+
+              final signalClient = snapshot.data;
+              if (signalClient == null) {
+                return const Center(child: Text('SignalClient not available'));
+              }
+
+              const troubleshootService = TroubleshootService();
+
+              return ChangeNotifierProvider(
+                create: (_) =>
+                    TroubleshootProvider(service: troubleshootService),
+                child: const TroubleshootPage(),
+              );
+            },
           );
         },
       ),

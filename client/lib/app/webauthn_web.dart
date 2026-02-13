@@ -60,7 +60,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
     });
 
     try {
-      final response = await ApiService.get('/magic/generate');
+      final response = await ApiService.instance.get('/magic/generate');
 
       if (response.statusCode == 200) {
         final data = response.data;
@@ -145,7 +145,9 @@ class _WebauthnPageState extends State<WebauthnPage> {
                     !urlString.startsWith('https://')) {
                   urlString = 'https://$urlString';
                 }
-                final resp = await ApiService.get('/backupcode/regenerate');
+                final resp = await ApiService.instance.get(
+                  '/backupcode/regenerate',
+                );
                 if (!mounted) return;
                 if (resp.statusCode == 200) {
                   if (!mounted) return;
@@ -178,7 +180,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
           !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      final resp = await ApiService.get('/webauthn/list');
+      final resp = await ApiService.instance.get('/webauthn/list');
       if (resp.statusCode == 200 && resp.data != null) {
         if (resp.data is List) {
           setState(() {
@@ -212,7 +214,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
           !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      final resp = await ApiService.get('/client/list');
+      final resp = await ApiService.instance.get('/client/list');
       if (resp.statusCode == 200 && resp.data != null) {
         if (resp.data is List) {
           setState(() {
@@ -244,7 +246,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
           !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      final resp = await ApiService.post(
+      final resp = await ApiService.instance.post(
         '/webauthn/delete',
         data: {'credentialId': credentialId},
       );
@@ -295,7 +297,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
             !urlString.startsWith('https://')) {
           urlString = 'https://$urlString';
         }
-        final resp = await ApiService.delete('/client/$clientId');
+        final resp = await ApiService.instance.delete('/client/$clientId');
         if (resp.statusCode == 200) {
           _showSuccess('Device removed successfully');
           _loadClients();
@@ -323,7 +325,7 @@ class _WebauthnPageState extends State<WebauthnPage> {
           !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      final resp = await ApiService.get('/backupcode/usage');
+      final resp = await ApiService.instance.get('/backupcode/usage');
       if (resp.statusCode == 200 && resp.data != null) {
         final used = resp.data["usedCount"] ?? 0;
         final total = resp.data["totalCount"] ?? 0;
@@ -351,8 +353,8 @@ class _WebauthnPageState extends State<WebauthnPage> {
         (defaultTargetPlatform == TargetPlatform.android ||
             defaultTargetPlatform == TargetPlatform.iOS)) {
       // Mobile: Get from ApiService which has the proper base URL
-      ApiService.init();
-      urlString = ApiService.dio.options.baseUrl;
+      ApiService.instance.init();
+      urlString = ApiService.instance.buildUrl("");
       debugPrint('[WEBAUTHN] Using mobile base URL: $urlString');
     } else {
       // Web: Use web config

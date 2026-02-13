@@ -31,8 +31,10 @@ class UserNotificationSettings {
 
 class UserNotificationSettingsService {
   static Future<UserNotificationSettings> fetch() async {
-    ApiService.init();
-    final response = await ApiService.get('/api/user/notification-settings');
+    await ApiService.instance.init();
+    final response = await ApiService.instance.get(
+      '/api/user/notification-settings',
+    );
     return UserNotificationSettings.fromJson(
       Map<String, dynamic>.from(response.data as Map),
     );
@@ -45,7 +47,7 @@ class UserNotificationSettingsService {
     bool? meetingCancelEmailEnabled,
     bool? meetingSelfInviteEmailEnabled,
   }) async {
-    ApiService.init();
+    await ApiService.instance.init();
 
     final data = <String, dynamic>{};
     if (meetingInviteEmailEnabled != null) {
@@ -65,7 +67,7 @@ class UserNotificationSettingsService {
       data['meetingSelfInviteEmailEnabled'] = meetingSelfInviteEmailEnabled;
     }
 
-    final response = await ApiService.dio.patch(
+    final response = await ApiService.instance.patch(
       '/api/user/notification-settings',
       data: data,
       options: Options(

@@ -110,13 +110,13 @@ class _ServerPanelState extends State<ServerPanel> {
   ) async {
     try {
       // Get server meta
-      final metaResp = await ApiService.get('/client/meta');
+      final metaResp = await ApiService.instance.get('/client/meta');
       if (metaResp.statusCode == 200) {
         final meta = metaResp.data is String
             ? jsonDecode(metaResp.data)
             : metaResp.data;
         // Login and persist session cookie
-        final loginResp = await ApiService.post(
+        final loginResp = await ApiService.instance.post(
           '/client/login',
           data: {
             'clientid': await ClientIdService.getClientId(),

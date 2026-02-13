@@ -79,6 +79,10 @@ class SqliteGroupMessageStore {
     try {
       final db = await DatabaseHelper.database;
 
+      debugPrint(
+        '[GROUP STORE] Storing sent message: itemId=$itemId, channelId=$channelId, message="$message"',
+      );
+
       // Encrypt the message content before storage
       final encryptedMessage = await _encryption.encryptString(message);
 
@@ -91,6 +95,7 @@ class SqliteGroupMessageStore {
         'timestamp': timestamp,
         'type': type,
         'direction': 'sent',
+        'status': 'delivered', // Mark as delivered to server
         'decrypted_at': DateTime.now().toIso8601String(),
         'created_at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -123,13 +128,41 @@ class SqliteGroupMessageStore {
       final decryptedResults = <Map<String, dynamic>>[];
       final messagesToDelete = <String>[];
 
+      debugPrint(
+        '[GROUP STORE] Retrieved ${results.length} raw messages for channel $channelId',
+      );
+
       for (var row in results) {
-        final decryptedRow = Map<String, dynamic>.from(row);
+        debugPrint(
+          '[GROUP STORE] Processing message: itemId=${row['item_id']}, direction=${row['direction']}, sender=${row['sender']}',
+        );
         if (row['message'] != null) {
           try {
-            decryptedRow['message'] = await _encryption.decryptString(
+            final decryptedMessage = await _encryption.decryptString(
               row['message'],
             );
+
+            // Build result with consistent field names (matching sqlite_message_store.dart format)
+            final decryptedRow = {
+              'itemId': row['item_id'],
+              'item_id': row['item_id'], // Keep snake_case for compatibility
+              'message': decryptedMessage,
+              'sender': row['sender'],
+              'senderDeviceId': row['sender_device_id'],
+              'sender_device_id': row['sender_device_id'], // Keep both formats
+              'channel_id': row['channel_id'],
+              'timestamp': row['timestamp'],
+              'type': row['type'],
+              'direction': row['direction'],
+              'status': row['status'],
+              'reactions': row['reactions'] ?? '{}', // Always include reactions
+            };
+
+            final preview =
+                decryptedMessage != null && decryptedMessage.length > 50
+                ? '${decryptedMessage.substring(0, 50)}...'
+                : decryptedMessage ?? '';
+            debugPrint('[GROUP STORE] ✓ Decrypted message: "$preview"');
             decryptedResults.add(decryptedRow);
           } catch (e) {
             debugPrint(
@@ -141,6 +174,21 @@ class SqliteGroupMessageStore {
             messagesToDelete.add(row['item_id'] as String);
           }
         } else {
+          // Even for messages without content, include reactions with consistent field names
+          final decryptedRow = {
+            'itemId': row['item_id'],
+            'item_id': row['item_id'],
+            'message': null,
+            'sender': row['sender'],
+            'senderDeviceId': row['sender_device_id'],
+            'sender_device_id': row['sender_device_id'],
+            'channel_id': row['channel_id'],
+            'timestamp': row['timestamp'],
+            'type': row['type'],
+            'direction': row['direction'],
+            'status': row['status'],
+            'reactions': row['reactions'] ?? '{}',
+          };
           decryptedResults.add(decryptedRow);
         }
       }

@@ -53,7 +53,7 @@ class _OtpWebPageState extends State<OtpWebPage> {
       final endpoint = kIsWeb ? '/register' : '$urlString/register';
       debugPrint('[OTP] Resending to: $endpoint');
 
-      final response = await ApiService.post(
+      final response = await ApiService.instance.post(
         endpoint,
         data: {'email': widget.email},
       );
@@ -111,7 +111,10 @@ class _OtpWebPageState extends State<OtpWebPage> {
         requestData['deviceInfo'] = deviceInfo;
       }
 
-      final response = await ApiService.post(endpoint, data: requestData);
+      final response = await ApiService.instance.post(
+        endpoint,
+        data: requestData,
+      );
       // Handle response as needed
       if (response.statusCode == 200) {
         // Success logic here - existing user login

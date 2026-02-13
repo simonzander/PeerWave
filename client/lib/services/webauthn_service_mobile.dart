@@ -47,7 +47,7 @@ class MobileWebAuthnService {
   Future<String?> getCurrentUserEmail() async {
     try {
       debugPrint('[MobileWebAuthn] Fetching user email from session');
-      final response = await ApiService.dio.get('/api/user/me');
+      final response = await ApiService.instance.get('/api/user/me');
 
       debugPrint('[MobileWebAuthn] Response status: ${response.statusCode}');
       debugPrint(
@@ -123,7 +123,7 @@ class MobileWebAuthnService {
         '[MobileWebAuthn] Sending registration request for $email to $serverUrl',
       );
 
-      final response = await ApiService.dio.post(
+      final response = await ApiService.instance.post(
         '$serverUrl/register',
         data: data,
       );
@@ -171,7 +171,7 @@ class MobileWebAuthnService {
       debugPrint(
         '[MobileWebAuthn] Requesting challenge from /webauthn/register-challenge',
       );
-      final challengeResponse = await ApiService.dio.post(
+      final challengeResponse = await ApiService.instance.post(
         '/webauthn/register-challenge',
         data: {}, // Email comes from session
       );
@@ -230,7 +230,7 @@ class MobileWebAuthnService {
       final deviceInfo = await DeviceInfoHelper.getDeviceDisplayName();
       debugPrint('[MobileWebAuthn] Device info: $deviceInfo');
       debugPrint('[MobileWebAuthn] Sending attestation to server');
-      final serverResponse = await ApiService.dio.post(
+      final serverResponse = await ApiService.instance.post(
         '/webauthn/register',
         data: {'attestation': registerResponseJson, 'deviceInfo': deviceInfo},
       );
@@ -246,7 +246,7 @@ class MobileWebAuthnService {
       // 6. Store credential metadata
       final credentialId = registerResponse.id;
       await _storeCredential(
-        serverUrl: ApiService.dio.options.baseUrl,
+        serverUrl: ApiService.instance.buildUrl(""),
         email: userEmail,
         credentialId: credentialId,
       );
@@ -272,7 +272,7 @@ class MobileWebAuthnService {
   /// Returns authentication response data on success, null on failure
   Future<Map<String, dynamic>?> authenticate({String? email}) async {
     try {
-      final serverUrl = ApiService.dio.options.baseUrl;
+      final serverUrl = ApiService.instance.buildUrl("");
 
       // If email not provided, try to find stored credential for this server
       String? userEmail = email;
@@ -305,7 +305,7 @@ class MobileWebAuthnService {
       }
 
       // 3. Request authentication challenge from server
-      final challengeResponse = await ApiService.dio.post(
+      final challengeResponse = await ApiService.instance.post(
         '$serverUrl/webauthn/auth-challenge',
         data: {'email': userEmail},
       );
@@ -332,7 +332,7 @@ class MobileWebAuthnService {
       final authResponseJson = authResponse.toJson();
       final deviceInfo = await DeviceInfoHelper.getDeviceDisplayName();
       debugPrint('[MobileWebAuthn] Device info: $deviceInfo');
-      final serverResponse = await ApiService.dio.post(
+      final serverResponse = await ApiService.instance.post(
         '$serverUrl/webauthn/authenticate',
         data: {...authResponseJson, 'deviceInfo': deviceInfo},
       );

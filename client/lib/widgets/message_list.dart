@@ -14,7 +14,6 @@ import 'emoji_picker_dialog.dart';
 import 'reaction_badge.dart';
 import '../models/file_message.dart';
 import '../theme/semantic_colors.dart';
-import '../services/signal_service.dart';
 import '../services/user_profile_service.dart';
 
 /// Reusable widget for displaying a list of messages
@@ -143,12 +142,16 @@ class _MessageListState extends State<MessageList> {
     final deliveredCount = message['deliveredCount'] as int?;
     final totalCount = message['totalCount'] as int?;
     final isGroupMessage = totalCount != null && totalCount > 0;
+    final metadata = _normalizeMetadata(message['metadata']);
+    final hasDeviceRetryIssues = _hasDeviceRetryIssues(metadata);
+
+    final theme = Theme.of(context);
+    final warningColor = theme.colorScheme.warning;
 
     // For group messages, show counts
     if (isGroupMessage) {
       if (status == 'read' || (readCount != null && readCount == totalCount)) {
         // All read - green double check
-        final theme = Theme.of(context);
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -193,7 +196,9 @@ class _MessageListState extends State<MessageList> {
             Icon(
               Icons.done_all,
               size: 16,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+              color: hasDeviceRetryIssues
+                  ? warningColor
+                  : theme.colorScheme.onSurface.withValues(alpha: 0.5),
             ),
             const SizedBox(width: 4),
             Text(
@@ -214,7 +219,9 @@ class _MessageListState extends State<MessageList> {
             Icon(
               Icons.check,
               size: 16,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+              color: hasDeviceRetryIssues
+                  ? warningColor
+                  : theme.colorScheme.onSurface.withValues(alpha: 0.5),
             ),
             const SizedBox(width: 4),
             Text(
@@ -228,17 +235,17 @@ class _MessageListState extends State<MessageList> {
         );
       } else if (status == 'delivered') {
         // Delivered to server, waiting for reads
-        final theme = Theme.of(context);
         return Icon(
           Icons.check,
           size: 16,
-          color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+          color: hasDeviceRetryIssues
+              ? warningColor
+              : theme.colorScheme.onSurface.withValues(alpha: 0.5),
         );
       }
     }
 
     // Standard 1:1 message status
-    final theme = Theme.of(context);
     switch (status) {
       case 'sending':
         return SizedBox(
@@ -254,16 +261,27 @@ class _MessageListState extends State<MessageList> {
         return Icon(
           Icons.check,
           size: 16,
-          color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+          color: hasDeviceRetryIssues
+              ? warningColor
+              : theme.colorScheme.onSurface.withValues(alpha: 0.5),
         );
       case 'delivered':
         return Icon(
           Icons.check,
           size: 16,
-          color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+          color: hasDeviceRetryIssues
+              ? warningColor
+              : theme.colorScheme.onSurface.withValues(alpha: 0.5),
         );
       case 'read':
         return Icon(Icons.done_all, size: 16, color: theme.colorScheme.primary);
+      case 'retrying':
+        return SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(strokeWidth: 2, color: warningColor),
+        );
+      case 'retry_failed':
       case 'failed':
       case 'decrypt_failed':
       case 'session_reset':
@@ -273,14 +291,90 @@ class _MessageListState extends State<MessageList> {
           color: theme.colorScheme.error,
         );
       case 'new_identity':
-        return Icon(
-          Icons.warning_amber_rounded,
-          size: 16,
-          color: Colors.amber.shade700,
-        );
+        return Icon(Icons.warning_amber_rounded, size: 16, color: warningColor);
       default:
         return const SizedBox.shrink();
     }
+  }
+
+  Widget _wrapStatusWithTooltip(Map<String, dynamic> message, Widget child) {
+    final tooltip = _buildStatusTooltipText(message);
+    if (tooltip == null || tooltip.isEmpty) {
+      return child;
+    }
+
+    return Tooltip(message: tooltip, preferBelow: false, child: child);
+  }
+
+  Map<String, dynamic> _normalizeMetadata(dynamic metadata) {
+    if (metadata == null) return {};
+    if (metadata is Map<String, dynamic>) return metadata;
+    if (metadata is Map) return Map<String, dynamic>.from(metadata);
+    if (metadata is String && metadata.isNotEmpty) {
+      try {
+        return jsonDecode(metadata) as Map<String, dynamic>;
+      } catch (_) {
+        return {};
+      }
+    }
+    return {};
+  }
+
+  bool _hasDeviceRetryIssues(Map<String, dynamic> metadata) {
+    final retryCountsRaw = metadata['retryCountByDevice'];
+    if (retryCountsRaw is Map) {
+      for (final value in retryCountsRaw.values) {
+        final count = value is int ? value : int.tryParse('$value') ?? 0;
+        if (count > 0) return true;
+      }
+    }
+    return false;
+  }
+
+  String? _buildStatusTooltipText(Map<String, dynamic> message) {
+    final status = message['status']?.toString() ?? '';
+    final readCount = message['readCount'] as int?;
+    final deliveredCount = message['deliveredCount'] as int?;
+    final totalCount = message['totalCount'] as int?;
+
+    final lines = <String>[];
+    if (status.isNotEmpty) {
+      lines.add('Status: $status');
+    }
+
+    if (totalCount != null && totalCount > 0) {
+      if (readCount != null) {
+        lines.add('Read: $readCount/$totalCount');
+      }
+      if (deliveredCount != null) {
+        lines.add('Delivered: $deliveredCount/$totalCount');
+      }
+    }
+
+    final metadata = _normalizeMetadata(message['metadata']);
+    final retryCountsRaw = metadata['retryCountByDevice'];
+    if (retryCountsRaw is Map) {
+      final keys = retryCountsRaw.keys.map((k) => k.toString()).toList()
+        ..sort();
+      for (final key in keys) {
+        final value = retryCountsRaw[key];
+        final count = value is int ? value : int.tryParse('$value') ?? 0;
+        lines.add('Device $key: retry $count/2');
+      }
+    }
+
+    final lastRetryDeviceId = metadata['lastRetryDeviceId'];
+    if (lastRetryDeviceId != null) {
+      lines.add('Last retry device: $lastRetryDeviceId');
+    }
+
+    final retryReason = metadata['retryReason'] as String?;
+    if (retryReason != null && retryReason.isNotEmpty) {
+      lines.add('Reason: $retryReason');
+    }
+
+    if (lines.isEmpty) return null;
+    return lines.join('\n');
   }
 
   @override
@@ -457,7 +551,10 @@ class _MessageListState extends State<MessageList> {
                             ),
                             if (isLocalSent) ...[
                               const SizedBox(width: 8),
-                              _buildMessageStatus(msg),
+                              _wrapStatusWithTooltip(
+                                msg,
+                                _buildMessageStatus(msg),
+                              ),
                             ],
                           ],
                         ),
@@ -518,41 +615,42 @@ class _MessageListState extends State<MessageList> {
       spacing: 6,
       runSpacing: 4,
       children: [
-        // Emoji add button (+)
-        InkWell(
-          onTap: () => _showEmojiPicker(messageId),
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: Theme.of(
-                context,
-              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
+        // Emoji add button (+) - only show if callback is available
+        if (widget.onReactionAdd != null)
+          InkWell(
+            onTap: () => _showEmojiPicker(messageId),
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
                 color: Theme.of(
                   context,
-                ).colorScheme.outline.withValues(alpha: 0.3),
+                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.outline.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.add_reaction_outlined,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 2),
+                  Icon(
+                    Icons.add,
+                    size: 14,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ],
               ),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.add_reaction_outlined,
-                  size: 16,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 2),
-                Icon(
-                  Icons.add,
-                  size: 14,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ],
-            ),
           ),
-        ),
 
         // Existing reaction badges
         ...reactions.entries.map((entry) {
@@ -731,30 +829,27 @@ class _MessageListState extends State<MessageList> {
 
     // Check if new identity was detected (device reinstalled or security issue)
     if (status == 'new_identity') {
+      final warningColor = Theme.of(context).colorScheme.warning;
       return Container(
         padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: Colors.amber.withValues(alpha: 0.2),
+          color: warningColor.withValues(alpha: 0.2),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: Colors.amber.withValues(alpha: 0.6),
+            color: warningColor.withValues(alpha: 0.6),
             width: 1,
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.warning_amber_rounded,
-              size: 18,
-              color: Colors.amber.shade700,
-            ),
+            Icon(Icons.warning_amber_rounded, size: 18, color: warningColor),
             SizedBox(width: 8),
             Flexible(
               child: Text(
                 text,
                 style: TextStyle(
-                  color: Colors.amber.shade900,
+                  color: warningColor,
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                 ),
@@ -1108,7 +1203,7 @@ class _MessageListState extends State<MessageList> {
           color: mentionTheme.colorScheme.onSurface,
           fontSize: 15,
         ),
-        currentUserId: SignalService.instance.currentUserId,
+        currentUserId: widget.currentUserId,
         senderInfo: senderProfile,
       );
     }

@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import 'package:livekit_client/livekit_client.dart' as lk;
 import '../services/video_conference_service.dart';
 import '../services/user_profile_service.dart';
+import '../services/web_pip_bridge_stub.dart'
+    if (dart.library.js_interop) '../services/web_pip_bridge.dart';
+import '../services/web_pip_video_stub.dart'
+    if (dart.library.html) '../services/web_pip_video.dart';
 import '../main.dart';
 import 'call_duration_timer.dart';
 import 'dart:convert';
@@ -17,18 +23,39 @@ class CallTopBar extends StatefulWidget {
 }
 
 class _CallTopBarState extends State<CallTopBar> {
+  static const bool _enableDocPip = false;
   final Map<String, String?> _profilePictures = {};
   final Map<String, String> _displayNames = {};
   final Set<String> _loadedProfiles =
       {}; // Track which profiles we've already loaded
   final Map<String, Widget> _cachedAvatars =
       {}; // Cache avatar widgets to prevent rebuilds
+  final Map<String, DateTime> _remoteLastSpokeAt = {};
+  bool _pipOpen = false;
+  bool _pipAutoOpening = false;
+  DateTime? _pipLastAttemptAt;
+  String? _pipLayoutSignature;
 
   @override
   void initState() {
     super.initState();
     // Load participant profiles when topbar is created
     _loadParticipantProfiles();
+
+    if (kIsWeb) {
+      WebPipBridge.instance.registerOnClose(() {
+        final service = VideoConferenceService.instance;
+        WebPipVideoManager.instance.detach();
+        if (mounted) {
+          setState(() {
+            _pipOpen = false;
+          });
+        }
+        if (service.isInCall && !service.isInFullView) {
+          service.showOverlay();
+        }
+      });
+    }
   }
 
   void _loadParticipantProfiles() {
@@ -71,6 +98,43 @@ class _CallTopBarState extends State<CallTopBar> {
 
     return Consumer<VideoConferenceService>(
       builder: (context, service, _) {
+        if (_pipOpen && kIsWeb) {
+          _updatePipVideo(service);
+        }
+
+        if (_enableDocPip &&
+            kIsWeb &&
+            !_pipOpen &&
+            !_pipAutoOpening &&
+            service.isInCall &&
+            service.isOverlayVisible &&
+            !service.isInFullView &&
+            WebPipBridge.instance.isSupported) {
+          final now = DateTime.now();
+          final lastAttempt = _pipLastAttemptAt;
+          final canAttempt =
+              lastAttempt == null || now.difference(lastAttempt).inSeconds > 4;
+          if (canAttempt) {
+            _pipAutoOpening = true;
+            _pipLastAttemptAt = now;
+            WidgetsBinding.instance.addPostFrameCallback((_) async {
+              final opened = await WebPipBridge.instance.open(
+                title: service.channelName ?? 'Video Call',
+                status: 'Call active',
+              );
+              if (opened) {
+                _pipOpen = true;
+                _updatePipVideo(service);
+                service.hideOverlay();
+              } else {
+                if (service.isInCall && !service.isInFullView) {
+                  service.showOverlay();
+                }
+              }
+              _pipAutoOpening = false;
+            });
+          }
+        }
         // Show TopBar only when in call AND not in full-view mode
         // For meetings, hide the top bar when in full-view
         if (!service.isInCall || (service.isInFullView && service.isMeeting)) {
@@ -265,20 +329,35 @@ class _CallTopBarState extends State<CallTopBar> {
                   const SizedBox(width: 12),
 
                   // Show overlay button (visible when overlay is hidden)
-                  if (!service.isOverlayVisible)
+                  if (_shouldShowFloatingButton)
                     IconButton(
                       iconSize: 24,
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                       icon: Icon(
-                        Icons.video_label,
+                        Icons.picture_in_picture_alt,
                         color: colorScheme.onSurface,
                         size: 20,
                       ),
-                      onPressed: () => service.showOverlay(),
+                      onPressed: () async {
+                        if (kIsWeb && WebPipBridge.instance.isSupported) {
+                          final opened = await WebPipBridge.instance.open(
+                            title: service.channelName ?? 'Video Call',
+                            status: 'Call active',
+                          );
+                          if (opened) {
+                            _pipOpen = true;
+                            _updatePipVideo(service);
+                            service.hideOverlay();
+                          }
+                          return;
+                        }
+
+                        service.showOverlay();
+                      },
                     ),
 
-                  if (!service.isOverlayVisible) const SizedBox(width: 12),
+                  if (_shouldShowFloatingButton) const SizedBox(width: 12),
 
                   // Toggle camera button
                   IconButton(
@@ -335,6 +414,173 @@ class _CallTopBarState extends State<CallTopBar> {
         );
       },
     );
+  }
+
+  void _updatePipVideo(VideoConferenceService service) {
+    final layout = _buildPipLayout(service);
+    if (layout.screenShare == null && layout.tiles.isEmpty) {
+      return;
+    }
+    final signature = _pipLayoutKey(layout);
+    if (signature == _pipLayoutSignature) {
+      return;
+    }
+    _pipLayoutSignature = signature;
+    WebPipVideoManager.instance.updateLayout(
+      title: service.channelName ?? 'Video Call',
+      status: 'Call active',
+      screenShare: layout.screenShare,
+      tiles: layout.tiles,
+    );
+  }
+
+  bool get _shouldShowFloatingButton {
+    if (_enableDocPip && kIsWeb && WebPipBridge.instance.isSupported) {
+      return true;
+    }
+    return false;
+  }
+
+  ({lk.VideoTrack? screenShare, List<WebPipTile> tiles}) _buildPipLayout(
+    VideoConferenceService service,
+  ) {
+    final room = service.room;
+    if (room == null) return (screenShare: null, tiles: <WebPipTile>[]);
+
+    final tiles = <WebPipTile>[];
+    lk.VideoTrack? screenShareTrack;
+
+    final sortedRemotes = _sortedRemotes(room);
+
+    if (service.hasActiveScreenShare &&
+        service.currentScreenShareParticipantId != null) {
+      final screenShareId = service.currentScreenShareParticipantId!;
+      final participant = screenShareId == room.localParticipant?.identity
+          ? room.localParticipant
+          : _findRemoteParticipant(room, screenShareId);
+      if (participant is lk.LocalParticipant) {
+        final screenPubs = participant.videoTrackPublications.where(
+          (p) => p.source == lk.TrackSource.screenShareVideo,
+        );
+        if (screenPubs.isNotEmpty) {
+          screenShareTrack = screenPubs.first.track as lk.VideoTrack?;
+        }
+      } else if (participant is lk.RemoteParticipant) {
+        final screenPubs = participant.videoTrackPublications.where(
+          (p) => p.source == lk.TrackSource.screenShareVideo,
+        );
+        if (screenPubs.isNotEmpty) {
+          screenShareTrack = screenPubs.first.track as lk.VideoTrack?;
+        }
+      }
+    }
+
+    final local = room.localParticipant;
+    if (local != null &&
+        local.identity != service.currentScreenShareParticipantId) {
+      final localTrack = _pickCameraTrack(local);
+      if (localTrack != null) {
+        tiles.add(
+          WebPipTile(
+            track: localTrack,
+            label: 'You',
+            isSpeaking: local.isSpeaking,
+          ),
+        );
+      }
+    }
+
+    final maxTiles = screenShareTrack == null ? 4 : 3;
+    for (final remote in sortedRemotes) {
+      if (remote.identity == service.currentScreenShareParticipantId) {
+        continue;
+      }
+      if (tiles.length >= maxTiles) {
+        break;
+      }
+      final remoteTrack = _pickCameraTrack(remote);
+      if (remoteTrack != null) {
+        tiles.add(
+          WebPipTile(
+            track: remoteTrack,
+            label: _displayNames[remote.identity] ?? remote.identity,
+            isSpeaking: remote.isSpeaking,
+          ),
+        );
+      }
+    }
+
+    return (screenShare: screenShareTrack, tiles: tiles);
+  }
+
+  String _pipLayoutKey(
+    ({lk.VideoTrack? screenShare, List<WebPipTile> tiles}) layout,
+  ) {
+    final buffer = StringBuffer();
+    final screenSid = layout.screenShare?.sid ?? '';
+    buffer.write(screenSid);
+    buffer.write('|');
+    for (final tile in layout.tiles) {
+      buffer.write(tile.track.sid);
+      buffer.write(':');
+      buffer.write(tile.isSpeaking ? '1' : '0');
+      buffer.write(':');
+      buffer.write(tile.track.muted ? '1' : '0');
+      buffer.write(':');
+      buffer.write(tile.label);
+      buffer.write('|');
+    }
+    return buffer.toString();
+  }
+
+  lk.RemoteParticipant? _findRemoteParticipant(lk.Room room, String identity) {
+    for (final participant in room.remoteParticipants.values) {
+      if (participant.identity == identity) {
+        return participant;
+      }
+    }
+    return null;
+  }
+
+  List<lk.RemoteParticipant> _sortedRemotes(lk.Room room) {
+    if (room.remoteParticipants.isEmpty) return <lk.RemoteParticipant>[];
+
+    final remotes = room.remoteParticipants.values.toList();
+    final now = DateTime.now();
+    for (final remote in remotes) {
+      if (remote.isSpeaking) {
+        _remoteLastSpokeAt[remote.identity] = now;
+      }
+    }
+
+    remotes.sort((a, b) {
+      if (a.isSpeaking && !b.isSpeaking) return -1;
+      if (b.isSpeaking && !a.isSpeaking) return 1;
+
+      final aLast =
+          _remoteLastSpokeAt[a.identity] ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final bLast =
+          _remoteLastSpokeAt[b.identity] ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      return bLast.compareTo(aLast);
+    });
+
+    return remotes;
+  }
+
+  lk.VideoTrack? _pickCameraTrack(dynamic participant) {
+    if (participant is! lk.LocalParticipant &&
+        participant is! lk.RemoteParticipant) {
+      return null;
+    }
+    final cameraPubs = participant.videoTrackPublications.where(
+      (p) => p.source != lk.TrackSource.screenShareVideo,
+    );
+    if (cameraPubs.isNotEmpty) {
+      return cameraPubs.first.track as lk.VideoTrack?;
+    }
+    return null;
   }
 
   /// Get cached avatar widget or build new one if profile changed

@@ -9,6 +9,7 @@ import '../services/server_config_native.dart';
 import '../services/clientid_native.dart';
 import '../services/device_identity_service.dart';
 import '../services/native_crypto_service.dart';
+import '../services/api_service.dart';
 import '../services/auth_service_web.dart'
     if (dart.library.io) '../services/auth_service_native.dart';
 import '../widgets/app_drawer.dart';
@@ -148,6 +149,15 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
         displayName: null, // Will extract from URL
       );
 
+      // Copy session cookies captured during magic verification into the new server key
+      await ApiService.instance.copyCookiesFromExternalServer(
+        serverUrl: serverUrl,
+        toServerKey: serverConfig.id,
+      );
+
+      // Ensure the newly added server becomes active
+      await ServerConfigService.setActiveServer(serverConfig.id);
+
       debugPrint(
         '[ServerSelection] Server configured: ${serverConfig.getDisplayName()}',
       );
@@ -170,8 +180,8 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
 
       // Navigate to main app
       if (mounted) {
-        debugPrint('[ServerSelection] ✓ Navigating to /app');
-        context.go('/app');
+        debugPrint('[ServerSelection] ✓ Navigating to /app/activities');
+        context.go('/app/activities');
         debugPrint('[ServerSelection] ✓ Navigation triggered');
       } else {
         debugPrint('[ServerSelection] ⚠️ Widget not mounted, cannot navigate');

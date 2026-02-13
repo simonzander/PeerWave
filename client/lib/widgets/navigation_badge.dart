@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/notification_provider.dart';
 import '../providers/unread_messages_provider.dart';
 import '../providers/file_transfer_stats_provider.dart';
 
@@ -30,13 +29,9 @@ class NavigationBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer2<NotificationProvider, UnreadMessagesProvider>(
-      builder: (context, notificationProvider, unreadProvider, _) {
-        final count = _getCountForType(
-          notificationProvider,
-          unreadProvider,
-          type,
-        );
+    return Consumer<UnreadMessagesProvider>(
+      builder: (context, unreadProvider, _) {
+        final count = _getCountForType(unreadProvider, type);
 
         // Special handling for files icon - show transfer indicators
         if (type == NavigationBadgeType.files) {
@@ -163,7 +158,6 @@ class NavigationBadge extends StatelessWidget {
   }
 
   int _getCountForType(
-    NotificationProvider notificationProvider,
     UnreadMessagesProvider unreadProvider,
     NavigationBadgeType type,
   ) {
@@ -219,13 +213,9 @@ class NavigationLabelWithBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer2<NotificationProvider, UnreadMessagesProvider>(
-      builder: (context, notificationProvider, unreadProvider, _) {
-        final count = _getCountForType(
-          notificationProvider,
-          unreadProvider,
-          type,
-        );
+    return Consumer<UnreadMessagesProvider>(
+      builder: (context, unreadProvider, _) {
+        final count = _getCountForType(unreadProvider, type);
 
         if (count == 0) {
           return Text(label);
@@ -240,7 +230,6 @@ class NavigationLabelWithBadge extends StatelessWidget {
   }
 
   int _getCountForType(
-    NotificationProvider notificationProvider,
     UnreadMessagesProvider unreadProvider,
     NavigationBadgeType type,
   ) {
@@ -255,7 +244,7 @@ class NavigationLabelWithBadge extends StatelessWidget {
         return 0;
 
       case NavigationBadgeType.activities:
-        return notificationProvider.totalUnreadCount;
+        return unreadProvider.totalActivityNotifications;
 
       case NavigationBadgeType.people:
         return 0;

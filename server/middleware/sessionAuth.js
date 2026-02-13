@@ -203,6 +203,8 @@ async function verifyAuthEither(req, res, next) {
   if (req.session && req.session.uuid) {
     logger.debug(`[AuthEither] Web client detected, using cookie auth`);
     req.userId = req.session.uuid;
+    req.clientId = req.session.clientId; // Add clientId for web clients
+    req.deviceId = req.session.deviceId; // Add deviceId for web clients
     req.sessionAuth = false;
     
     // Update last_used for web client sessions too

@@ -6,13 +6,12 @@ import 'dart:async';
 import 'dart:convert';
 import '../services/video_conference_service.dart';
 import '../services/api_service.dart';
-import '../services/message_listener_service.dart';
 import '../services/user_profile_service.dart';
 import '../services/meeting_service.dart';
+import '../services/server_settings_service.dart';
 import '../services/socket_service.dart'
     if (dart.library.io) '../services/socket_service_native.dart';
 import '../services/external_participant_service.dart';
-import '../services/signal_service.dart';
 import '../services/call_service.dart';
 import '../widgets/video_grid_layout.dart';
 import '../widgets/video_controls_bar.dart';
@@ -54,6 +53,10 @@ class _MeetingVideoConferenceViewState
   Timer? _visibilityUpdateTimer;
   int _maxVisibleParticipants = 0;
   final Map<String, StreamSubscription> _audioSubscriptions = {};
+  bool _serviceListenerAttached = false;
+  int _lastRemoteParticipantCount = -1;
+  bool? _lastHasScreenShare;
+  String? _lastScreenShareParticipantId;
 
   // Profile cache
   final Map<String, String> _displayNameCache = {};
@@ -83,7 +86,9 @@ class _MeetingVideoConferenceViewState
   /// Set up Socket.IO listener for guest E2EE key requests (via Signal Protocol)
   /// Guests request LiveKit E2EE key via Socket.IO (since they don't have userId for standard Signal routing)
   void _setupGuestE2EEKeyRequestSocketListener() {
-    SocketService().socket?.on('guest:meeting_e2ee_key_request', (data) async {
+    SocketService.instance.socket?.on('guest:meeting_e2ee_key_request', (
+      data,
+    ) async {
       try {
         debugPrint(
           '[MeetingVideo] 🔐 Received E2EE key request from guest via Socket.IO',
@@ -121,24 +126,22 @@ class _MeetingVideoConferenceViewState
         }
 
         debugPrint(
-          '[MeetingVideo] ✓ Responding to guest with encrypted LiveKit E2EE key...',
+          '[MeetingVideo] ✓ Responding to guest with Signal-encrypted LiveKit E2EE key...',
         );
 
-        // Send encrypted response via Signal Protocol
-        // SignalService will encrypt the LiveKit key and send it to the guest
-        await SignalService.instance.sendItemToGuest(
-          meetingId: meetingId,
+        final requestId = requestData['request_id'] as String?;
+        final signalClient = await ServerSettingsService.instance
+            .getOrCreateSignalClientWithStoredCredentials();
+
+        await signalClient.meetingService.sendE2EEKeyToExternalGuest(
           guestSessionId: guestSessionId,
-          type: 'meeting_e2ee_key_response',
-          payload: {
-            'meetingId': meetingId,
-            'encryptedKey': base64.encode(_service!.channelSharedKey!),
-            'timestamp': DateTime.now().millisecondsSinceEpoch,
-          },
+          meetingId: meetingId,
+          encryptedKey: base64.encode(_service!.channelSharedKey!),
+          requestId: requestId,
         );
 
         debugPrint(
-          '[MeetingVideo] ✓ Sent encrypted LiveKit E2EE key to guest $guestSessionId',
+          '[MeetingVideo] ✓ Sent Signal-encrypted LiveKit E2EE key to guest $guestSessionId',
         );
       } catch (e, stack) {
         debugPrint(
@@ -161,13 +164,7 @@ class _MeetingVideoConferenceViewState
         _service = Provider.of<VideoConferenceService>(context, listen: false);
         debugPrint('[MeetingVideo] Service obtained from Provider');
 
-        // Register with MessageListenerService for E2EE
-        MessageListenerService.instance.registerVideoConferenceService(
-          _service!,
-        );
-        debugPrint(
-          '[MeetingVideo] Registered VideoConferenceService with MessageListener',
-        );
+        _attachServiceListener();
 
         // Schedule join after build
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -186,6 +183,41 @@ class _MeetingVideoConferenceViewState
         });
       }
     }
+  }
+
+  void _attachServiceListener() {
+    if (_service == null || _serviceListenerAttached) return;
+
+    _service!.addListener(_onServiceUpdated);
+    _serviceListenerAttached = true;
+
+    _lastRemoteParticipantCount = _service!.remoteParticipants.length;
+    _lastHasScreenShare = _service!.hasActiveScreenShare;
+    _lastScreenShareParticipantId = _service!.currentScreenShareParticipantId;
+  }
+
+  void _onServiceUpdated() {
+    if (!mounted || _service == null) return;
+
+    final remoteCount = _service!.remoteParticipants.length;
+    final hasScreenShare = _service!.hasActiveScreenShare;
+    final screenShareId = _service!.currentScreenShareParticipantId;
+
+    final shouldRefresh =
+        remoteCount != _lastRemoteParticipantCount ||
+        hasScreenShare != _lastHasScreenShare ||
+        screenShareId != _lastScreenShareParticipantId;
+
+    if (!shouldRefresh) return;
+
+    _lastRemoteParticipantCount = remoteCount;
+    _lastHasScreenShare = hasScreenShare;
+    _lastScreenShareParticipantId = screenShareId;
+
+    _updateParticipantStates();
+    _updateVisibility(rebuild: false);
+
+    setState(() {});
   }
 
   Future<void> _joinMeeting() async {
@@ -207,16 +239,16 @@ class _MeetingVideoConferenceViewState
         '[MeetingVideo] Attempting to join socket room: meeting:${widget.meetingId}',
       );
       debugPrint(
-        '[MeetingVideo] Socket connected: ${SocketService().isConnected}',
+        '[MeetingVideo] Socket connected: ${SocketService.instance.isConnected}',
       );
 
-      if (!SocketService().isConnected) {
+      if (!SocketService.instance.isConnected) {
         debugPrint('[MeetingVideo] ⚠️ Socket not connected, waiting...');
         // Wait a bit for socket to connect
         await Future.delayed(const Duration(seconds: 1));
       }
 
-      SocketService().emit('meeting:join-room', {
+      SocketService.instance.emit('meeting:join-room', {
         'meeting_id': widget.meetingId,
       });
       debugPrint('[MeetingVideo] ✓ Emitted meeting:join-room event');
@@ -265,7 +297,7 @@ class _MeetingVideoConferenceViewState
       debugPrint(
         '[MeetingVideo] Leaving socket room: meeting:${widget.meetingId}',
       );
-      SocketService().emit('meeting:leave-room', {
+      SocketService.instance.emit('meeting:leave-room', {
         'meeting_id': widget.meetingId,
       });
 
@@ -283,15 +315,13 @@ class _MeetingVideoConferenceViewState
   @override
   void dispose() {
     // Remove Socket.IO listener for guest E2EE requests
-    SocketService().socket?.off('guest:meeting_e2ee_key_request');
+    SocketService.instance.socket?.off('guest:meeting_e2ee_key_request');
     debugPrint(
       '[MeetingVideo] ✓ Removed Socket.IO listener for guest:meeting_e2ee_key_request',
     );
 
-    // SECURITY: Clear guest Signal sessions when meeting ends
-    // This prevents session keys from persisting in sessionStorage
-    SignalService.instance.clearGuestSessions(widget.meetingId);
-    debugPrint('[MeetingVideo] ✓ Cleared guest Signal sessions for security');
+    // Guest sessions are temporary and cleaned up by server on disconnect
+    // No client-side cleanup needed
 
     // Clean up subscriptions
     for (final sub in _audioSubscriptions.values) {
@@ -314,17 +344,16 @@ class _MeetingVideoConferenceViewState
       });
     }
 
-    // Unregister from MessageListenerService
-    MessageListenerService.instance.unregisterVideoConferenceService();
-    debugPrint(
-      '[MeetingVideo] Unregistered VideoConferenceService from MessageListener',
-    );
+    if (_serviceListenerAttached) {
+      _service?.removeListener(_onServiceUpdated);
+      _serviceListenerAttached = false;
+    }
 
     super.dispose();
   }
 
-  void _updateVisibility() {
-    if (_service == null || _service!.room == null || !mounted) return;
+  bool _updateVisibility({bool rebuild = true}) {
+    if (_service == null || _service!.room == null || !mounted) return false;
 
     final screenSize = MediaQuery.of(context).size;
     final hasScreenShare = _service!.hasActiveScreenShare;
@@ -335,8 +364,13 @@ class _MeetingVideoConferenceViewState
     if (newMaxVisible != _maxVisibleParticipants) {
       _maxVisibleParticipants = newMaxVisible;
       _updateParticipantStates();
-      setState(() {});
+      if (rebuild) {
+        setState(() {});
+      }
+      return true;
     }
+
+    return false;
   }
 
   int _calculateMaxVisible(Size screenSize, bool hasScreenShare) {
@@ -518,13 +552,15 @@ class _MeetingVideoConferenceViewState
     };
 
     // Send missed_call Signal message to each user who didn't join
+    final signalClient = await ServerSettingsService.instance
+        .getOrCreateSignalClientWithStoredCredentials();
     for (final userId in missedUsers) {
       try {
-        await SignalService.instance.sendItem(
+        await signalClient.messagingService.send1to1Message(
           recipientUserId: userId,
           type:
               'missingcall', // Note: using 'missingcall' to match existing activity type
-          payload: payload,
+          payload: jsonEncode(payload),
         );
         debugPrint('[MeetingVideo] Sent missed call notification to $userId');
       } catch (e) {
@@ -575,7 +611,7 @@ class _MeetingVideoConferenceViewState
             });
 
             try {
-              final response = await ApiService.get('/people/list');
+              final response = await ApiService.instance.get('/people/list');
               if (response.statusCode == 200) {
                 final users = response.data is List
                     ? response.data as List
@@ -615,7 +651,7 @@ class _MeetingVideoConferenceViewState
 
           Future<void> sendEmailInvitation(String email) async {
             try {
-              await ApiService.post(
+              await ApiService.instance.post(
                 '/api/meetings/${widget.meetingId}/invite-email',
                 data: {'email': email},
               );
@@ -643,7 +679,7 @@ class _MeetingVideoConferenceViewState
 
               // Check if user is blocked
               try {
-                final blockResponse = await ApiService.get(
+                final blockResponse = await ApiService.instance.get(
                   '/api/check-blocked/$userId',
                 );
                 if (blockResponse.statusCode == 200 &&

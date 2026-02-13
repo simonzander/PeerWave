@@ -252,5 +252,283 @@ window.webauthnRegister = async function(serverUrl, email) {
             return await response.text();
         }
     </script>
+    <script>
+        (function () {
+            const pipState = { win: null, elements: {} };
+
+            window.peerwaveDocPiPSupported = function () {
+                return !!(window.documentPictureInPicture && documentPictureInPicture.requestWindow);
+            };
+
+            window.peerwaveDocPiPOpen = async function (options) {
+                if (!window.peerwaveDocPiPSupported()) {
+                    return false;
+                }
+
+                if (pipState.win && !pipState.win.closed) {
+                    if (options && options.title) {
+                        window.peerwaveDocPiPSetTitle(options.title);
+                    }
+                    if (options && options.status) {
+                        window.peerwaveDocPiPSetStatus(options.status);
+                    }
+                    return true;
+                }
+
+                const width = options && options.width ? options.width : 360;
+                const height = options && options.height ? options.height : 220;
+                const title = options && options.title ? options.title : 'Video Call';
+                const status = options && options.status ? options.status : 'Call active';
+
+                const pipWindow = await documentPictureInPicture.requestWindow({ width, height });
+                pipState.win = pipWindow;
+
+                const doc = pipWindow.document;
+                doc.body.style.margin = '0';
+                doc.body.style.fontFamily = 'system-ui, -apple-system, Segoe UI, sans-serif';
+                doc.body.style.background = '#111';
+                doc.body.style.color = '#fff';
+
+                const root = doc.createElement('div');
+                root.style.display = 'flex';
+                root.style.flexDirection = 'column';
+                root.style.height = '100%';
+
+                const header = doc.createElement('div');
+                header.style.display = 'flex';
+                header.style.alignItems = 'center';
+                header.style.justifyContent = 'space-between';
+                header.style.padding = '6px 8px';
+                header.style.background = '#1b1b1b';
+                header.style.borderBottom = '1px solid #2a2a2a';
+
+                const titleEl = doc.createElement('div');
+                titleEl.textContent = title;
+                titleEl.style.fontSize = '12px';
+                titleEl.style.fontWeight = '600';
+
+                const statusEl = doc.createElement('div');
+                statusEl.textContent = status;
+                statusEl.style.fontSize = '10px';
+                statusEl.style.opacity = '0.75';
+                statusEl.style.marginTop = '2px';
+
+                const titleWrap = doc.createElement('div');
+                titleWrap.style.display = 'flex';
+                titleWrap.style.flexDirection = 'column';
+                titleWrap.appendChild(titleEl);
+                titleWrap.appendChild(statusEl);
+
+                const closeBtn = doc.createElement('button');
+                closeBtn.textContent = 'Close';
+                closeBtn.style.fontSize = '11px';
+                closeBtn.style.padding = '4px 8px';
+                closeBtn.style.border = '1px solid #444';
+                closeBtn.style.background = '#1b1b1b';
+                closeBtn.style.color = '#fff';
+                closeBtn.style.borderRadius = '6px';
+                closeBtn.style.cursor = 'pointer';
+                closeBtn.addEventListener('click', () => pipWindow.close());
+
+                header.appendChild(titleWrap);
+                header.appendChild(closeBtn);
+
+                const contentWrapper = doc.createElement('div');
+                contentWrapper.style.position = 'relative';
+                contentWrapper.style.flex = '1';
+                contentWrapper.style.display = 'flex';
+                contentWrapper.style.flexDirection = 'column';
+                contentWrapper.style.background = '#000';
+
+                root.appendChild(header);
+                root.appendChild(contentWrapper);
+                doc.body.appendChild(root);
+
+                pipState.elements = {
+                    title: titleEl,
+                    status: statusEl,
+                    content: contentWrapper
+                };
+
+                pipWindow.addEventListener('pagehide', () => {
+                    pipState.win = null;
+                    pipState.elements = {};
+                    if (window.peerwaveDocPiPOnClose) {
+                        window.peerwaveDocPiPOnClose();
+                    }
+                });
+
+                return true;
+            };
+
+            window.peerwaveDocPiPClose = async function () {
+                if (pipState.win && !pipState.win.closed) {
+                    pipState.win.close();
+                }
+                pipState.win = null;
+                pipState.elements = {};
+                return true;
+            };
+
+            window.peerwaveDocPiPSetStatus = function (text) {
+                if (pipState.elements.status) {
+                    pipState.elements.status.textContent = text || '';
+                }
+            };
+
+            window.peerwaveDocPiPSetTitle = function (text) {
+                if (pipState.elements.title) {
+                    pipState.elements.title.textContent = text || '';
+                }
+            };
+
+            function safePlay(video) {
+                if (!video || typeof video.play !== 'function') {
+                    return;
+                }
+                const playResult = video.play();
+                if (playResult && typeof playResult.catch === 'function') {
+                    playResult.catch(() => {});
+                }
+            }
+
+            function toStream(source) {
+                if (!source) {
+                    return null;
+                }
+                if (source instanceof MediaStream) {
+                    return source;
+                }
+                if (source instanceof MediaStreamTrack) {
+                    const track = typeof source.clone === 'function' ? source.clone() : source;
+                    return new MediaStream([track]);
+                }
+                return null;
+            }
+
+            function createTile(doc, tile) {
+                const wrap = doc.createElement('div');
+                wrap.style.position = 'relative';
+                wrap.style.background = '#000';
+                wrap.style.borderRadius = '6px';
+                wrap.style.overflow = 'hidden';
+                if (tile && tile.isSpeaking) {
+                    wrap.style.outline = '2px solid #3bd671';
+                }
+
+                const video = doc.createElement('video');
+                video.autoplay = true;
+                video.playsInline = true;
+                video.muted = true;
+                video.style.width = '100%';
+                video.style.height = '100%';
+                video.style.objectFit = 'cover';
+                const tileSource = tile ? (tile.track || tile.stream) : null;
+                const tileStream = toStream(tileSource);
+                if (tileStream) {
+                    video.srcObject = tileStream;
+                    safePlay(video);
+                }
+
+                if (!tileStream) {
+                    const placeholder = doc.createElement('div');
+                    placeholder.textContent = 'No video';
+                    placeholder.style.position = 'absolute';
+                    placeholder.style.top = '6px';
+                    placeholder.style.left = '6px';
+                    placeholder.style.fontSize = '10px';
+                    placeholder.style.opacity = '0.65';
+                    wrap.appendChild(placeholder);
+                }
+
+                const label = doc.createElement('div');
+                label.textContent = tile && tile.label ? tile.label : '';
+                label.style.position = 'absolute';
+                label.style.left = '6px';
+                label.style.bottom = '6px';
+                label.style.fontSize = '10px';
+                label.style.padding = '2px 6px';
+                label.style.borderRadius = '4px';
+                label.style.background = 'rgba(0,0,0,0.6)';
+                label.style.color = '#fff';
+
+                wrap.appendChild(video);
+                wrap.appendChild(label);
+                return wrap;
+            }
+
+            window.peerwaveDocPiPUpdateLayout = function (layout) {
+                if (!pipState.elements.content) {
+                    return;
+                }
+
+                const content = pipState.elements.content;
+                while (content.firstChild) {
+                    content.removeChild(content.firstChild);
+                }
+
+                if (layout && layout.title && pipState.elements.title) {
+                    pipState.elements.title.textContent = layout.title;
+                }
+                if (layout && layout.status && pipState.elements.status) {
+                    pipState.elements.status.textContent = layout.status;
+                }
+
+                const tiles = layout && Array.isArray(layout.tiles) ? layout.tiles : [];
+                const screenSource = layout ? (layout.screenShare || layout.screenTrack) : null;
+                const screenShare = toStream(screenSource);
+
+                if (screenShare) {
+                    const screenWrap = content.ownerDocument.createElement('div');
+                    screenWrap.style.flex = '6';
+                    screenWrap.style.position = 'relative';
+                    screenWrap.style.borderBottom = '1px solid #1e1e1e';
+
+                    const screenVideo = content.ownerDocument.createElement('video');
+                    screenVideo.autoplay = true;
+                    screenVideo.playsInline = true;
+                    screenVideo.muted = true;
+                    screenVideo.style.width = '100%';
+                    screenVideo.style.height = '100%';
+                    screenVideo.style.objectFit = 'contain';
+                    screenVideo.srcObject = screenShare;
+                    safePlay(screenVideo);
+
+                    screenWrap.appendChild(screenVideo);
+                    content.appendChild(screenWrap);
+
+                    if (tiles.length) {
+                        const row = content.ownerDocument.createElement('div');
+                        row.style.flex = '4';
+                        row.style.display = 'flex';
+                        row.style.gap = '6px';
+                        row.style.padding = '6px';
+                        row.style.background = '#000';
+                        tiles.slice(0, 3).forEach((tile) => {
+                            const tileWrap = createTile(content.ownerDocument, tile);
+                            tileWrap.style.flex = '1';
+                            row.appendChild(tileWrap);
+                        });
+                        content.appendChild(row);
+                    }
+                    return;
+                }
+
+                const grid = content.ownerDocument.createElement('div');
+                grid.style.display = 'grid';
+                grid.style.flex = '1';
+                grid.style.gap = '6px';
+                grid.style.padding = '6px';
+                const cols = tiles.length > 2 ? '1fr 1fr' : '1fr';
+                grid.style.gridTemplateColumns = cols;
+
+                tiles.forEach((tile) => {
+                    grid.appendChild(createTile(content.ownerDocument, tile));
+                });
+
+                content.appendChild(grid);
+            };
+        })();
+    </script>
 </body>
 </html>

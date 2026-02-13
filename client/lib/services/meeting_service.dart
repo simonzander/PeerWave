@@ -26,7 +26,7 @@ class MeetingService {
   factory MeetingService() => _instance;
   MeetingService._internal();
 
-  final _socketService = SocketService();
+  final _socketService = SocketService.instance;
 
   // Stream controllers for real-time updates
   final _meetingCreatedController = StreamController<Meeting>.broadcast();
@@ -177,7 +177,7 @@ class MeetingService {
     List<String>? participantIds,
     List<String>? emailInvitations,
   }) async {
-    final response = await ApiService.post(
+    final response = await ApiService.instance.post(
       '/api/meetings',
       data: {
         'title': title,
@@ -206,7 +206,7 @@ class MeetingService {
     if (isInstantCall != null) queryParams['is_instant_call'] = isInstantCall;
     if (channelId != null) queryParams['channel_id'] = channelId;
 
-    final response = await ApiService.get(
+    final response = await ApiService.instance.get(
       '/api/meetings',
       queryParameters: queryParams,
     );
@@ -218,7 +218,7 @@ class MeetingService {
 
   /// Get upcoming meetings
   Future<List<Meeting>> getUpcomingMeetings() async {
-    final response = await ApiService.get('/api/meetings/upcoming');
+    final response = await ApiService.instance.get('/api/meetings/upcoming');
     final List<dynamic> data = response.data as List<dynamic>;
     return data
         .map((json) => Meeting.fromJson(json as Map<String, dynamic>))
@@ -227,7 +227,7 @@ class MeetingService {
 
   /// Get past meetings
   Future<List<Meeting>> getPastMeetings() async {
-    final response = await ApiService.get('/api/meetings/past');
+    final response = await ApiService.instance.get('/api/meetings/past');
     final List<dynamic> data = response.data as List<dynamic>;
     return data
         .map((json) => Meeting.fromJson(json as Map<String, dynamic>))
@@ -236,7 +236,7 @@ class MeetingService {
 
   /// Get user's meetings (where user is participant)
   Future<List<Meeting>> getMyMeetings() async {
-    final response = await ApiService.get('/api/meetings/my');
+    final response = await ApiService.instance.get('/api/meetings/my');
     final List<dynamic> data = response.data as List<dynamic>;
     return data
         .map((json) => Meeting.fromJson(json as Map<String, dynamic>))
@@ -245,7 +245,7 @@ class MeetingService {
 
   /// Get a specific meeting by ID
   Future<Meeting> getMeeting(String meetingId) async {
-    final response = await ApiService.get('/api/meetings/$meetingId');
+    final response = await ApiService.instance.get('/api/meetings/$meetingId');
     return Meeting.fromJson(response.data as Map<String, dynamic>);
   }
 
@@ -275,7 +275,7 @@ class MeetingService {
       updates['invited_participants'] = invitedParticipants;
     }
 
-    final response = await ApiService.patch(
+    final response = await ApiService.instance.patch(
       '/api/meetings/$meetingId',
       data: updates,
     );
@@ -284,12 +284,12 @@ class MeetingService {
 
   /// Delete a meeting
   Future<void> deleteMeeting(String meetingId) async {
-    await ApiService.delete('/api/meetings/$meetingId');
+    await ApiService.instance.delete('/api/meetings/$meetingId');
   }
 
   /// Get participants for a meeting
   Future<List<MeetingParticipant>> getParticipants(String meetingId) async {
-    final response = await ApiService.get(
+    final response = await ApiService.instance.get(
       '/api/meetings/$meetingId/participants',
     );
     final List<dynamic> data = response.data as List<dynamic>;
@@ -312,7 +312,7 @@ class MeetingService {
     String userId, {
     String role = 'meeting_member',
   }) async {
-    final response = await ApiService.post(
+    final response = await ApiService.instance.post(
       '/api/meetings/$meetingId/participants',
       data: {'user_id': userId, 'role': role},
     );
@@ -328,7 +328,9 @@ class MeetingService {
 
   /// Remove a participant from a meeting
   Future<void> removeParticipant(String meetingId, String userId) async {
-    await ApiService.delete('/api/meetings/$meetingId/participants/$userId');
+    await ApiService.instance.delete(
+      '/api/meetings/$meetingId/participants/$userId',
+    );
   }
 
   /// Update participant status
@@ -337,7 +339,7 @@ class MeetingService {
     String userId,
     String status,
   ) async {
-    final response = await ApiService.post(
+    final response = await ApiService.instance.post(
       '/api/meetings/$meetingId/participants/$userId',
       data: {'status': status},
     );
@@ -349,7 +351,7 @@ class MeetingService {
     String meetingId, {
     int expiresInHours = 24,
   }) async {
-    final response = await ApiService.post(
+    final response = await ApiService.instance.post(
       '/api/meetings/$meetingId/generate-link',
       data: {'expires_in_hours': expiresInHours},
     );
@@ -359,7 +361,7 @@ class MeetingService {
   /// RSVP to a meeting (authenticated)
   /// PATCH /api/meetings/:meetingId/rsvp
   Future<void> rsvpMeeting(String meetingId, String status) async {
-    await ApiService.patch(
+    await ApiService.instance.patch(
       '/api/meetings/$meetingId/rsvp',
       data: {'status': status},
     );

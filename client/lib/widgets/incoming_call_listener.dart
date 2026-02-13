@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:peerwave_client/main.dart';
 import 'package:peerwave_client/services/call_service.dart';
-import 'package:peerwave_client/services/signal_service.dart';
 import 'package:peerwave_client/services/sound_service.dart';
 import 'package:peerwave_client/theme/semantic_colors.dart';
+import 'package:peerwave_client/core/events/event_bus.dart';
 
 /// Global widget that listens for incoming calls and displays notifications
 class IncomingCallListener extends StatefulWidget {
@@ -22,6 +22,7 @@ class _IncomingCallListenerState extends State<IncomingCallListener> {
   final CallService _callService = CallService();
   final SoundService _soundService = SoundService.instance;
   final List<Map<String, dynamic>> _incomingCalls = [];
+  StreamSubscription? _eventSubscription;
 
   @override
   void initState() {
@@ -30,21 +31,23 @@ class _IncomingCallListenerState extends State<IncomingCallListener> {
   }
 
   void _setupCallListener() {
-    debugPrint('[IncomingCallListener] Setting up call listener callback...');
+    debugPrint('[IncomingCallListener] Setting up EventBus listener...');
 
-    // Listen for call notifications via Signal Protocol (type: call_notification)
-    SignalService.instance.registerItemCallback('call_notification', (
-      item,
+    // Listen for incoming calls via EventBus
+    _eventSubscription = EventBus.instance.on(AppEvent.incomingCall).listen((
+      data,
     ) async {
       debugPrint(
-        '[IncomingCallListener] ========== Received call_notification ==========',
+        '[IncomingCallListener] ========== Received incomingCall event ==========',
       );
-      debugPrint('[IncomingCallListener] Item data: $item');
+      debugPrint('[IncomingCallListener] Event data: $data');
 
       try {
-        // Parse payload (comes as JSON string for system messages with cipherType 0)
-        final payloadStr = item['payload'] as String;
-        debugPrint('[IncomingCallListener] Payload string: $payloadStr');
+        final eventData = data as Map<String, dynamic>;
+
+        // Parse payload (comes as decrypted message)
+        final payloadStr = eventData['decryptedMessage'] as String;
+        debugPrint('[IncomingCallListener] Decrypted message: $payloadStr');
 
         final payload = jsonDecode(payloadStr) as Map<String, dynamic>;
         debugPrint('[IncomingCallListener] Decoded payload: $payload');
@@ -93,11 +96,13 @@ class _IncomingCallListenerState extends State<IncomingCallListener> {
         debugPrint('[IncomingCallListener] Stack trace: $stackTrace');
       }
     });
+
+    debugPrint('[IncomingCallListener] ✓ EventBus listener registered');
   }
 
   @override
   void dispose() {
-    // Callback cleanup is handled by SignalService
+    _eventSubscription?.cancel();
     super.dispose();
   }
 

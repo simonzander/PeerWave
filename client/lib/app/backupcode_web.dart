@@ -38,7 +38,7 @@ class _BackupCodeListPageState extends State<BackupCodeListPage> {
           !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      final resp = await ApiService.get('/backupcode/list');
+      final resp = await ApiService.instance.get('/backupcode/list');
       if (resp.statusCode == 200 && resp.data != null) {
         final data = resp.data is String ? json.decode(resp.data) : resp.data;
         if (data is Map && data['backupCodes'] is List) {

@@ -63,17 +63,55 @@ class NotificationListenerService {
   }
 
   /// Handle new message events (1:1 and group messages)
+  String? _getServerId(Map<String, dynamic> data) {
+    final rawServerId = data['serverId'] ?? data['_serverId'];
+    if (rawServerId is String && rawServerId.isNotEmpty) {
+      return rawServerId;
+    }
+
+    if (kIsWeb) {
+      return 'web';
+    }
+
+    return null;
+  }
+
+  bool _isDuplicateNotification(String? itemId, String? serverId) {
+    if (itemId == null || itemId.isEmpty) return false;
+
+    final key = serverId == null || serverId.isEmpty
+        ? itemId
+        : '$serverId:$itemId';
+    final now = DateTime.now();
+
+    _recentNotifications.removeWhere(
+      (storedKey, time) => now.difference(time) > _deduplicationWindow,
+    );
+
+    if (_recentNotifications.containsKey(key)) {
+      return true;
+    }
+
+    _recentNotifications[key] = now;
+    return false;
+  }
+
   void _handleNewMessage(Map<String, dynamic> data) {
     try {
       debugPrint('[NotificationListener] 📬 New message event received');
       debugPrint('[NotificationListener] Data: $data');
 
       final type = data['type'] as String?;
-      final sender = data['sender'] as String?;
+      final sender = (data['senderId'] ?? data['sender'])?.toString();
       final message = data['message'] as String?;
-      final channel = data['channel'] as String?;
-      final isOwnMessage = data['isOwnMessage'] as bool? ?? false;
+      final channel = (data['channelId'] ?? data['channel'])?.toString();
       final itemId = data['itemId'] as String?;
+      final serverId = _getServerId(data);
+
+      final currentUserId = UserProfileService.instance.currentUserUuid;
+      final isOwnMessage =
+          data['isOwnMessage'] as bool? ??
+          (currentUserId != null && sender == currentUserId);
 
       // Don't show notifications for own messages
       if (isOwnMessage) {
@@ -83,25 +121,11 @@ class NotificationListenerService {
 
       // Deduplication: Skip if we've shown this notification recently
       // This prevents duplicate notifications when user has multiple devices online
-      if (itemId != null) {
-        final now = DateTime.now();
-        final lastShown = _recentNotifications[itemId];
-
-        // Clean up old entries (older than deduplication window)
-        _recentNotifications.removeWhere(
-          (key, time) => now.difference(time) > _deduplicationWindow,
+      if (_isDuplicateNotification(itemId, serverId)) {
+        debugPrint(
+          '[NotificationListener] ⏭️ Skipping duplicate notification (itemId: $itemId, serverId: $serverId)',
         );
-
-        if (lastShown != null &&
-            now.difference(lastShown) < _deduplicationWindow) {
-          debugPrint(
-            '[NotificationListener] ⏭️ Skipping duplicate notification (itemId: $itemId, shown ${now.difference(lastShown).inSeconds}s ago)',
-          );
-          return;
-        }
-
-        // Mark this notification as shown
-        _recentNotifications[itemId] = now;
+        return;
       }
 
       // Only show notifications for actual content (not system messages)
@@ -165,10 +189,15 @@ class NotificationListenerService {
       debugPrint('[NotificationListener] 🔔 New notification event received');
 
       final type = data['type'] as String?;
-      final sender = data['sender'] as String?;
+      final sender = (data['senderId'] ?? data['sender'])?.toString();
       final message = data['message'] as String?;
-      final isOwnMessage = data['isOwnMessage'] as bool? ?? false;
       final itemId = data['itemId'] as String?;
+      final serverId = _getServerId(data);
+
+      final currentUserId = UserProfileService.instance.currentUserUuid;
+      final isOwnMessage =
+          data['isOwnMessage'] as bool? ??
+          (currentUserId != null && sender == currentUserId);
 
       // Don't show notifications for own actions
       if (isOwnMessage) {
@@ -176,25 +205,11 @@ class NotificationListenerService {
       }
 
       // Deduplication: Skip if we've shown this notification recently
-      if (itemId != null) {
-        final now = DateTime.now();
-        final lastShown = _recentNotifications[itemId];
-
-        // Clean up old entries
-        _recentNotifications.removeWhere(
-          (key, time) => now.difference(time) > _deduplicationWindow,
+      if (_isDuplicateNotification(itemId, serverId)) {
+        debugPrint(
+          '[NotificationListener] ⏭️ Skipping duplicate activity notification (itemId: $itemId, serverId: $serverId)',
         );
-
-        if (lastShown != null &&
-            now.difference(lastShown) < _deduplicationWindow) {
-          debugPrint(
-            '[NotificationListener] ⏭️ Skipping duplicate activity notification (itemId: $itemId)',
-          );
-          return;
-        }
-
-        // Mark this notification as shown
-        _recentNotifications[itemId] = now;
+        return;
       }
 
       // Get sender display name

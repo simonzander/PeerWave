@@ -211,8 +211,8 @@ class _ActivitiesViewState extends State<ActivitiesView>
     // Batch fetch all user info in one request
     if (senderIds.isNotEmpty) {
       try {
-        ApiService.init();
-        final resp = await ApiService.post(
+        await ApiService.instance.init();
+        final resp = await ApiService.instance.post(
           '/client/people/info',
           data: {'userIds': senderIds},
         );
@@ -394,8 +394,8 @@ class _ActivitiesViewState extends State<ActivitiesView>
     // Batch fetch all user info in one request
     if (userIds.isNotEmpty) {
       try {
-        ApiService.init();
-        final resp = await ApiService.post(
+        await ApiService.instance.init();
+        final resp = await ApiService.instance.post(
           '/client/people/info',
           data: {'userIds': userIds},
         );
@@ -433,8 +433,8 @@ class _ActivitiesViewState extends State<ActivitiesView>
     // Batch fetch all channel info in one request
     if (channelIds.isNotEmpty) {
       try {
-        ApiService.init();
-        final resp = await ApiService.post(
+        await ApiService.instance.init();
+        final resp = await ApiService.instance.post(
           '/client/channels/info',
           data: {'channelIds': channelIds},
         );
@@ -513,8 +513,8 @@ class _ActivitiesViewState extends State<ActivitiesView>
     // Batch fetch all at once
     if (senderIds.isNotEmpty) {
       try {
-        ApiService.init();
-        final resp = await ApiService.post(
+        await ApiService.instance.init();
+        final resp = await ApiService.instance.post(
           '/client/people/info',
           data: {'userIds': senderIds.toList()},
         );
@@ -892,7 +892,7 @@ class _ActivitiesViewState extends State<ActivitiesView>
         } else if (pictureData.startsWith('/')) {
           // Relative path
           imageProvider = NetworkImage(
-            '${ApiService.dio.options.baseUrl}$pictureData',
+            '${ApiService.instance.buildUrl("")}$pictureData',
           );
         }
       } catch (e) {

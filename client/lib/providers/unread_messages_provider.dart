@@ -1,9 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
+import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/device_scoped_storage_service.dart';
 import '../services/server_config_native.dart'
     if (dart.library.html) '../services/server_config_web.dart';
+import '../core/events/event_bus.dart';
+import '../services/user_profile_service.dart';
+import '../services/active_conversation_service.dart';
 
 /// Provider for managing unread message counts across channels and direct messages
 /// Uses device-scoped storage on web for per-device unread tracking
@@ -15,6 +19,18 @@ import '../services/server_config_native.dart'
 /// Counts are persisted to storage per-server and survive app restarts.
 /// Only 'message' and 'file' type messages increment the counters.
 class UnreadMessagesProvider extends ChangeNotifier {
+  // EventBus subscriptions for unread count updates
+  StreamSubscription<Map<String, dynamic>>? _newMessageSub;
+  StreamSubscription<Map<String, dynamic>>? _newNotificationSub;
+
+  // Deduplication for EventBus items (prevents double-counting)
+  final Map<String, DateTime> _recentEventIds = {};
+  static const Duration _deduplicationWindow = Duration(seconds: 5);
+
+  UnreadMessagesProvider() {
+    _registerEventBusListeners();
+  }
+
   // Server ID -> Channel UUID -> Unread Count
   Map<String, Map<String, int>> _channelUnreadCounts = {};
 
@@ -74,6 +90,113 @@ class UnreadMessagesProvider extends ChangeNotifier {
     'removefromchannel',
     'permissionchange',
   };
+
+  void _registerEventBusListeners() {
+    _newMessageSub = EventBus.instance
+        .on<Map<String, dynamic>>(AppEvent.newMessage)
+        .listen(_handleNewMessageEvent);
+    _newNotificationSub = EventBus.instance
+        .on<Map<String, dynamic>>(AppEvent.newNotification)
+        .listen(_handleNewNotificationEvent);
+  }
+
+  bool _isDuplicateEvent(
+    String? itemId, {
+    required String prefix,
+    String? serverId,
+  }) {
+    if (itemId == null || itemId.isEmpty) return false;
+
+    final normalizedServerId = serverId ?? _currentServerId ?? 'web';
+    final key = '$prefix:$normalizedServerId:$itemId';
+    final now = DateTime.now();
+
+    _recentEventIds.removeWhere(
+      (eventKey, time) => now.difference(time) > _deduplicationWindow,
+    );
+
+    if (_recentEventIds.containsKey(key)) {
+      return true;
+    }
+
+    _recentEventIds[key] = now;
+    return false;
+  }
+
+  String? _getServerIdFromEvent(Map<String, dynamic> data) {
+    final rawServerId = data['serverId'] ?? data['_serverId'];
+    if (rawServerId is String && rawServerId.isNotEmpty) {
+      return rawServerId;
+    }
+
+    if (kIsWeb) {
+      return 'web';
+    }
+
+    return _currentServerId;
+  }
+
+  void _handleNewMessageEvent(Map<String, dynamic> data) {
+    final itemId = data['itemId']?.toString();
+    final serverId = _getServerIdFromEvent(data);
+    if (_isDuplicateEvent(itemId, prefix: 'message', serverId: serverId)) {
+      return;
+    }
+
+    final type = data['type'] as String? ?? 'message';
+
+    final currentUserId = UserProfileService.instance.currentUserUuid;
+    final senderId = (data['senderId'] ?? data['sender'])?.toString();
+    final isOwnMessage =
+        data['isOwnMessage'] as bool? ??
+        (currentUserId != null && senderId == currentUserId);
+
+    if (isOwnMessage) return;
+
+    final channelId = (data['channelId'] ?? data['channel'])?.toString();
+    if (channelId != null && channelId.isNotEmpty) {
+      if (ActiveConversationService.instance.shouldSuppressGroupNotification(
+        channelId,
+      )) {
+        debugPrint(
+          '[UnreadProvider] Skipping unread increment for active channel $channelId',
+        );
+        return;
+      }
+      incrementIfBadgeType(type, channelId, true, serverId: serverId);
+      return;
+    }
+
+    if (senderId != null && senderId.isNotEmpty) {
+      if (ActiveConversationService.instance
+          .shouldSuppressDirectMessageNotification(senderId)) {
+        debugPrint(
+          '[UnreadProvider] Skipping unread increment for active DM $senderId',
+        );
+        return;
+      }
+      incrementIfBadgeType(type, senderId, false, serverId: serverId);
+    }
+  }
+
+  void _handleNewNotificationEvent(Map<String, dynamic> data) {
+    final itemId = data['itemId']?.toString();
+    final serverId = _getServerIdFromEvent(data);
+    if (_isDuplicateEvent(itemId, prefix: 'activity', serverId: serverId)) {
+      return;
+    }
+
+    final currentUserId = UserProfileService.instance.currentUserUuid;
+    final senderId = (data['senderId'] ?? data['sender'])?.toString();
+    final isOwnMessage =
+        data['isOwnMessage'] as bool? ??
+        (currentUserId != null && senderId == currentUserId);
+
+    if (isOwnMessage) return;
+    if (itemId == null || itemId.isEmpty) return;
+
+    incrementActivityNotification(itemId, serverId: serverId);
+  }
 
   // ============================================================================
   // GETTERS
@@ -145,44 +268,55 @@ class UnreadMessagesProvider extends ChangeNotifier {
   ///
   /// [channelUuid] The UUID of the channel
   /// [count] Number to increment by (default: 1)
-  void incrementChannelUnread(String channelUuid, {int count = 1}) {
-    if (count <= 0 || _currentServerId == null) return;
+  void incrementChannelUnread(
+    String channelUuid, {
+    int count = 1,
+    String? serverId,
+  }) {
+    final targetServerId = serverId ?? _currentServerId;
+    if (count <= 0 || targetServerId == null) return;
 
-    final counts = _getChannelCounts(_currentServerId);
+    final counts = _getChannelCounts(targetServerId);
     counts[channelUuid] = (counts[channelUuid] ?? 0) + count;
 
     notifyListeners();
-    saveToStorage(_currentServerId!);
+    saveToStorage(targetServerId);
   }
 
   /// Increment unread count for a direct message conversation (current server)
   ///
   /// [userUuid] The UUID of the user
   /// [count] Number to increment by (default: 1)
-  void incrementDirectMessageUnread(String userUuid, {int count = 1}) {
-    if (count <= 0 || _currentServerId == null) return;
+  void incrementDirectMessageUnread(
+    String userUuid, {
+    int count = 1,
+    String? serverId,
+  }) {
+    final targetServerId = serverId ?? _currentServerId;
+    if (count <= 0 || targetServerId == null) return;
 
-    final counts = _getDirectMessageCounts(_currentServerId);
+    final counts = _getDirectMessageCounts(targetServerId);
     counts[userUuid] = (counts[userUuid] ?? 0) + count;
 
     notifyListeners();
-    saveToStorage(_currentServerId!);
+    saveToStorage(targetServerId);
   }
 
   /// Increment unread count for an activity notification (current server)
   ///
   /// [itemId] The item ID of the notification message
-  void incrementActivityNotification(String itemId) {
-    if (_currentServerId == null) return;
+  void incrementActivityNotification(String itemId, {String? serverId}) {
+    final targetServerId = serverId ?? _currentServerId;
+    if (targetServerId == null) return;
 
-    final counts = _getActivityCounts(_currentServerId);
+    final counts = _getActivityCounts(targetServerId);
     counts[itemId] = 1; // Each notification counts as 1
 
     debugPrint(
-      '[UnreadProvider] ✓ Activity notification added: $itemId (server: $_currentServerId, total: $totalActivityNotifications)',
+      '[UnreadProvider] ✓ Activity notification added: $itemId (server: $targetServerId, total: $totalActivityNotifications)',
     );
     notifyListeners();
-    saveToStorage(_currentServerId!);
+    saveToStorage(targetServerId);
   }
 
   /// Decrement/remove an activity notification when marked as read (current server)
@@ -209,17 +343,18 @@ class UnreadMessagesProvider extends ChangeNotifier {
   void incrementIfBadgeType(
     String messageType,
     String targetId,
-    bool isChannel,
-  ) {
+    bool isChannel, {
+    String? serverId,
+  }) {
     if (!badgeMessageTypes.contains(messageType)) {
       debugPrint('[UnreadProvider] Ignoring non-badge type: $messageType');
       return;
     }
 
     if (isChannel) {
-      incrementChannelUnread(targetId);
+      incrementChannelUnread(targetId, serverId: serverId);
     } else {
-      incrementDirectMessageUnread(targetId);
+      incrementDirectMessageUnread(targetId, serverId: serverId);
     }
   }
 
@@ -618,5 +753,12 @@ class UnreadMessagesProvider extends ChangeNotifier {
       '[UnreadProvider] All Servers: ${_channelUnreadCounts.keys.toList()}',
     );
     debugPrint('[UnreadProvider] ================================');
+  }
+
+  @override
+  void dispose() {
+    _newMessageSub?.cancel();
+    _newNotificationSub?.cancel();
+    super.dispose();
   }
 }

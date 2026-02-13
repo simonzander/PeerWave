@@ -53,6 +53,11 @@ class UserProfileService {
   final Map<String, Map<String, List<void Function(Map<String, dynamic>?)>>>
   _pendingCallbacks = {};
 
+  // Profile update listeners: uuid -> List of callbacks
+  // Notified when profile data changes (displayName, picture)
+  final Map<String, List<void Function(Map<String, dynamic>)>>
+  _updateListeners = {};
+
   bool _isInitialLoading = false;
 
   /// Get the current active server ID
@@ -82,6 +87,45 @@ class UserProfileService {
   ) {
     serverId ??= 'web'; // Fallback for web
     return _pendingCallbacks.putIfAbsent(serverId, () => {});
+  }
+
+  /// Register a callback for profile updates
+  void onProfileUpdate(
+    String uuid,
+    void Function(Map<String, dynamic>) callback,
+  ) {
+    _updateListeners.putIfAbsent(uuid, () => []).add(callback);
+    debugPrint('[UserProfileService] Registered update listener for $uuid');
+  }
+
+  /// Unregister a profile update callback
+  void removeProfileUpdateListener(
+    String uuid,
+    void Function(Map<String, dynamic>) callback,
+  ) {
+    _updateListeners[uuid]?.remove(callback);
+    if (_updateListeners[uuid]?.isEmpty ?? false) {
+      _updateListeners.remove(uuid);
+    }
+  }
+
+  /// Notify listeners that a profile has been updated
+  void _notifyProfileUpdate(String uuid, Map<String, dynamic> profile) {
+    final listeners = _updateListeners[uuid];
+    if (listeners != null && listeners.isNotEmpty) {
+      debugPrint(
+        '[UserProfileService] Notifying ${listeners.length} listeners for $uuid',
+      );
+      for (final callback in listeners) {
+        try {
+          callback(profile);
+        } catch (e) {
+          debugPrint(
+            '[UserProfileService] Error in profile update callback: $e',
+          );
+        }
+      }
+    }
   }
 
   /// Get current user's UUID (from own profile cache for current server)
@@ -234,9 +278,9 @@ class UserProfileService {
 
       // Batch request: /people/profiles?uuids=uuid1,uuid2,uuid3
       final uuidsParam = uuidsToLoad.join(',');
-      ApiService.init();
-      final resp = await ApiService.get(
-        ApiService.buildUrl('/people/profiles?uuids=$uuidsParam'),
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.get(
+        ApiService.instance.buildUrl('/people/profiles?uuids=$uuidsParam'),
       );
 
       if (resp.statusCode == 200) {
@@ -398,6 +442,9 @@ class UserProfileService {
         }
       }
     }
+
+    // Notify profile update listeners for live UI updates
+    _notifyProfileUpdate(uuid, profileData);
   }
 
   /// Get displayName for a UUID (current server)
@@ -650,8 +697,10 @@ class UserProfileService {
         urlString = 'https://$urlString';
       }
 
-      ApiService.init();
-      final resp = await ApiService.get(ApiService.buildUrl('/client/profile'));
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.get(
+        ApiService.instance.buildUrl('/client/profile'),
+      );
 
       if (resp.statusCode == 200) {
         final data = resp.data;

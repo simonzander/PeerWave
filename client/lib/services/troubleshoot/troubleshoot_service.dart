@@ -6,7 +6,7 @@ import '../../features/troubleshoot/models/key_metrics.dart';
 import '../../features/troubleshoot/models/device_info.dart';
 import '../../features/troubleshoot/models/server_config.dart' as model;
 import '../../features/troubleshoot/models/storage_info.dart';
-import '../signal_service.dart';
+import '../server_settings_service.dart';
 import '../storage/sqlite_group_message_store.dart';
 import '../storage/database_helper.dart';
 import '../device_identity_service.dart';
@@ -21,9 +21,7 @@ import '../../web_config.dart';
 
 /// Service for Signal Protocol troubleshooting and diagnostics.
 class TroubleshootService {
-  final SignalService signalService;
-
-  const TroubleshootService({required this.signalService});
+  const TroubleshootService();
 
   /// Retrieves current key management metrics.
   Future<KeyMetrics> getKeyMetrics() async {
@@ -46,7 +44,7 @@ class TroubleshootService {
 
       // Request server to regenerate identity key
       // This requires re-authentication and full key regeneration
-      SocketService().emit('regenerateIdentityKey', null);
+      SocketService.instance.emit('regenerateIdentityKey', null);
 
       debugPrint('[Troubleshoot] ✓ Identity key regeneration requested');
     } catch (e) {
@@ -61,7 +59,7 @@ class TroubleshootService {
       debugPrint('[Troubleshoot] Deleting signed pre-key...');
 
       // Request deletion and regeneration via server
-      SocketService().emit('deleteAndRegenerateSignedPreKey', null);
+      SocketService.instance.emit('deleteAndRegenerateSignedPreKey', null);
 
       debugPrint('[Troubleshoot] ✓ Signed PreKey deletion requested');
     } catch (e) {
@@ -75,19 +73,23 @@ class TroubleshootService {
     try {
       debugPrint('[Troubleshoot] Deleting all PreKeys...');
 
+      // Get SignalClient for current server
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClientWithStoredCredentials();
+
       // Get all PreKey IDs for logging
-      final preKeyIds = await signalService.preKeyStore.getAllPreKeyIds();
+      final preKeyIds = await signalClient.keyManager.getAllPreKeyIds();
 
       // Delete from server
-      SocketService().emit('deleteAllPreKeys', null);
+      SocketService.instance.emit('deleteAllPreKeys', null);
 
       // Remove locally
       for (final id in preKeyIds) {
-        await signalService.preKeyStore.removePreKey(id);
+        await signalClient.keyManager.removePreKey(id);
       }
 
       // Trigger key regeneration
-      SocketService().emit('signalStatus', null);
+      SocketService.instance.emit('signalStatus', null);
 
       debugPrint('[Troubleshoot] ✓ Deleted ${preKeyIds.length} PreKeys');
     } catch (e) {
@@ -148,7 +150,7 @@ class TroubleshootService {
       debugPrint('[Troubleshoot] Forcing signed PreKey rotation...');
 
       // Request rotation via server
-      SocketService().emit('rotateSignedPreKey', null);
+      SocketService.instance.emit('rotateSignedPreKey', null);
 
       debugPrint('[Troubleshoot] ✓ Signed PreKey rotation requested');
     } catch (e) {
@@ -162,17 +164,21 @@ class TroubleshootService {
     try {
       debugPrint('[Troubleshoot] Forcing PreKey regeneration...');
 
+      // Get SignalClient for current server
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClientWithStoredCredentials();
+
       // Get all existing PreKey IDs for logging
-      final existingIds = await signalService.preKeyStore.getAllPreKeyIds();
+      final existingIds = await signalClient.keyManager.getAllPreKeyIds();
 
       // Remove all existing PreKeys locally
       for (final id in existingIds) {
-        await signalService.preKeyStore.removePreKey(id);
+        await signalClient.keyManager.removePreKey(id);
       }
 
       // Delete from server and trigger regeneration
-      SocketService().emit('deleteAllPreKeys', null);
-      SocketService().emit('signalStatus', null);
+      SocketService.instance.emit('deleteAllPreKeys', null);
+      SocketService.instance.emit('signalStatus', null);
 
       debugPrint(
         '[Troubleshoot] ✓ PreKey regeneration requested (${existingIds.length} removed)',
@@ -205,8 +211,8 @@ class TroubleshootService {
 
           if (serverUrl != null) {
             // Fetch channel details
-            final response = await ApiService.get(
-              '${ApiService.ensureHttpPrefix(serverUrl)}/client/channels/$id',
+            final response = await ApiService.instance.get(
+              '${ApiService.instance.ensureHttpPrefix(serverUrl)}/client/channels/$id',
             );
 
             if (response.statusCode == 200 && response.data != null) {
@@ -242,12 +248,16 @@ class TroubleshootService {
       final deviceIdentity = DeviceIdentityService.instance;
       final deviceId = deviceIdentity.deviceId;
       final clientId = deviceIdentity.clientId;
-      final userId = signalService.currentUserId ?? 'N/A';
+
+      // Get SignalClient for current server
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClientWithStoredCredentials();
+      final userId = signalClient.getCurrentUserId?.call() ?? 'N/A';
 
       // Get identity key fingerprint (first 16 chars of public key)
       String identityKeyFingerprint = 'N/A';
       try {
-        final identityData = await signalService.identityStore
+        final identityData = await signalClient.keyManager
             .getIdentityKeyPairData();
         final publicKey = identityData['publicKey'];
         if (publicKey is String && publicKey.length >= 16) {
@@ -292,8 +302,8 @@ class TroubleshootService {
         }
       }
 
-      // Use SocketService().isConnected getter for reliable connection status
-      final isConnected = SocketService().isConnected;
+      // Use SocketService.instance.isConnected getter for reliable connection status
+      final isConnected = SocketService.instance.isConnected;
       final connectionStatus = isConnected ? 'Connected' : 'Disconnected';
 
       return model.ServerConfig(
@@ -357,7 +367,9 @@ class TroubleshootService {
 
       try {
         // Count PreKeys
-        final preKeyIds = await signalService.preKeyStore.getAllPreKeyIds();
+        final signalClient = await ServerSettingsService.instance
+            .getOrCreateSignalClientWithStoredCredentials();
+        final preKeyIds = await signalClient.keyManager.getAllPreKeyIds();
         preKeysCount = preKeyIds.length;
       } catch (e) {
         debugPrint('[Troubleshoot] Error counting PreKeys: $e');
@@ -381,7 +393,7 @@ class TroubleshootService {
   /// 2. Force Socket Reconnect - Disconnect and reconnect socket
   Future<void> forceSocketReconnect() async {
     try {
-      final socketService = SocketService();
+      final socketService = SocketService.instance;
       debugPrint('[Troubleshoot] Forcing socket reconnect...');
 
       // Disconnect existing socket
@@ -402,7 +414,7 @@ class TroubleshootService {
   /// 3. Test Server Connection - Send ping to verify server is responding
   Future<bool> testServerConnection() async {
     try {
-      final socketService = SocketService();
+      final socketService = SocketService.instance;
 
       if (!socketService.isConnected) {
         debugPrint('[Troubleshoot] Cannot test - socket not connected');
@@ -492,7 +504,7 @@ class TroubleshootService {
       debugPrint('[Troubleshoot] Syncing keys with server...');
 
       // Trigger key upload via signalStatus
-      SocketService().emit('signalStatus', null);
+      SocketService.instance.emit('signalStatus', null);
 
       debugPrint('[Troubleshoot] ✓ Key sync initiated (signalStatus sent)');
     } catch (e) {

@@ -3,12 +3,11 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'socket_service.dart' if (dart.library.io) 'socket_service_native.dart';
-import 'signal_service.dart';
-import 'signal_setup_service.dart';
+import 'api_service.dart';
+import 'server_settings_service.dart';
 import 'ice_config_service.dart';
 import 'user_profile_service.dart';
 import 'message_cleanup_service.dart';
-import 'message_listener_service.dart';
 import 'notification_service.dart' as desktop;
 import 'notification_service_android.dart';
 import 'notification_listener_service.dart';
@@ -127,6 +126,17 @@ class PostLoginInitService {
       final totalSteps = 16; // Updated from 15 to include meeting/call services
       var currentStep = 0;
 
+      // Ensure ApiService is initialized for the active server so auth headers/cookies are ready
+      final activeServer = ServerConfigService.getActiveServer();
+      if (activeServer != null) {
+        await ApiService.instance.initForServer(
+          activeServer.id,
+          serverUrl: activeServer.serverUrl,
+        );
+      } else {
+        debugPrint('[POST_LOGIN_INIT] ⚠️ No active server found before init');
+      }
+
       // ========================================
       // PHASE 1: Network Foundation (SEQUENTIAL)
       // ========================================
@@ -152,7 +162,14 @@ class PostLoginInitService {
       debugPrint(
         '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Connecting to all Socket.IO servers...',
       );
-      await SocketService().connectAllServers();
+
+      // For web: Set server URL before connecting
+      if (kIsWeb) {
+        debugPrint('[POST_LOGIN_INIT] Web: Setting server URL to $serverUrl');
+        SocketService.instance.setServerUrl(serverUrl);
+      }
+
+      await SocketService.instance.connectAllServers();
       debugPrint('[POST_LOGIN_INIT] ✓ Socket.IO connected to all servers');
 
       // ========================================
@@ -188,35 +205,62 @@ class PostLoginInitService {
       await StarredChannelsService.instance.initialize();
       debugPrint('[POST_LOGIN_INIT] ✓ Starred channels initialized');
 
-      // Step 4: Initialize Signal Protocol stores
+      // Step 4: Load user profile (required for SignalClient)
+      currentStep++;
+      onProgress?.call('Loading user profile...', currentStep, totalSteps);
+      debugPrint(
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Loading user profile...',
+      );
+
+      if (!UserProfileService.instance.isLoaded) {
+        await UserProfileService.instance.initProfiles();
+        debugPrint('[POST_LOGIN_INIT] ✓ User profile loaded');
+      } else {
+        debugPrint('[POST_LOGIN_INIT] ✓ User profile already loaded');
+      }
+
+      // Step 5: Initialize Signal Protocol stores
       currentStep++;
       onProgress?.call('Initializing encryption...', currentStep, totalSteps);
       debugPrint(
         '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing Signal Protocol...',
       );
-      await SignalService.instance.initStoresAndListeners();
-      debugPrint('[POST_LOGIN_INIT] ✓ Signal Protocol initialized');
 
-      // Step 5: Check and generate Signal keys if needed
-      currentStep++;
-      onProgress?.call('Checking encryption keys...', currentStep, totalSteps);
+      // Get userId and deviceId for SignalClient initialization
+      final currentUserId = UserProfileService.instance.currentUserUuid;
+      final currentDeviceId = ServerSettingsService.instance.getDeviceId();
+
       debugPrint(
-        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Checking Signal keys...',
+        '[POST_LOGIN_INIT] Initializing SignalClient with userId: $currentUserId, deviceId: $currentDeviceId',
       );
-      final keysStatusRaw = await SignalSetupService.instance.checkKeysStatus();
-      final keysStatus = Map<String, dynamic>.from(keysStatusRaw);
-      final needsSetup = keysStatus['needsSetup'] as bool;
 
-      if (needsSetup) {
-        debugPrint('[POST_LOGIN_INIT] Generating Signal keys...');
-        await SignalSetupService.instance.initializeAfterLogin(
-          unreadProvider: unreadProvider,
-          onProgress: (step, current, total) {
-            debugPrint('[POST_LOGIN_INIT]   → $step');
-          },
+      // Validate we have required credentials
+      if (currentUserId == null || currentUserId.isEmpty) {
+        throw StateError(
+          'Cannot initialize SignalClient: User ID not available. '
+          'Please ensure authentication completes successfully.',
         );
       }
-      debugPrint('[POST_LOGIN_INIT] ✓ Signal keys ready');
+
+      if (currentDeviceId == null) {
+        throw StateError(
+          'Cannot initialize SignalClient: Device ID not available. '
+          'Please ensure authentication completes and device ID is stored.',
+        );
+      }
+
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClient(
+            userId: currentUserId,
+            deviceId: currentDeviceId,
+          );
+      if (!signalClient.isInitialized) {
+        await signalClient.initialize();
+      }
+      debugPrint('[POST_LOGIN_INIT] ✓ Signal Protocol initialized');
+
+      // Keys are auto-generated by observers and verified by healing service
+      // No manual status check needed - system handles setup automatically
 
       // ========================================
       // PHASE 3: Data Services (PARALLEL)
@@ -229,18 +273,6 @@ class PostLoginInitService {
       );
 
       await Future.wait([
-        // User profiles
-        Future(() async {
-          try {
-            if (!UserProfileService.instance.isLoaded) {
-              await UserProfileService.instance.initProfiles();
-              debugPrint('[POST_LOGIN_INIT]   ✓ User profiles loaded');
-            }
-          } catch (e) {
-            debugPrint('[POST_LOGIN_INIT]   ⚠️ User profiles error: $e');
-          }
-        }),
-
         // Message cleanup service
         Future(() async {
           try {
@@ -295,19 +327,12 @@ class PostLoginInitService {
       // PHASE 4: Communication Services (SEQUENTIAL)
       // ========================================
 
-      // Step 7: Initialize Message Listener
+      // Step 7: Notification services
       currentStep++;
-      onProgress?.call(
-        'Setting up message listeners...',
-        currentStep,
-        totalSteps,
-      );
+      onProgress?.call('Setting up notifications...', currentStep, totalSteps);
       debugPrint(
-        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing message listeners...',
+        '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing notifications...',
       );
-      SignalService.instance.setUnreadMessagesProvider(unreadProvider);
-      MessageListenerService.instance.initialize();
-      debugPrint('[POST_LOGIN_INIT] ✓ Message listeners ready');
 
       // Initialize notification services
       await SoundService.instance.initialize();
@@ -458,7 +483,7 @@ class PostLoginInitService {
         '[POST_LOGIN_INIT] [$currentStep/$totalSteps] Initializing P2P coordinator...',
       );
 
-      final socketService = SocketService();
+      final socketService = SocketService.instance;
       if (socketService.socket != null && socketService.isConnected) {
         final socketFileClient = SocketFileClient();
 
@@ -467,7 +492,6 @@ class PostLoginInitService {
           downloadManager: _downloadManager!,
           storage: _fileStorage!,
           encryptionService: _encryptionService!,
-          signalService: SignalService.instance,
           socketClient: socketFileClient,
           chunkingService: _chunkingService!,
           statsProvider: statsProvider,
@@ -487,7 +511,7 @@ class PostLoginInitService {
       );
       if (_p2pCoordinator != null) {
         try {
-          final socketService = SocketService();
+          final socketService = SocketService.instance;
           if (socketService.socket != null) {
             final socketFileClient = SocketFileClient();
             final reannounceService = FileReannounceService(

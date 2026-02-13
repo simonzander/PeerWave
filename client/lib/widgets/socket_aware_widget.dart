@@ -29,7 +29,7 @@ class _SocketAwareWidgetState extends State<SocketAwareWidget> {
 
   void _checkConnection() {
     try {
-      final socketService = SocketService();
+      final socketService = SocketService.instance;
       final connected =
           socketService.socket != null && socketService.isConnected;
       debugPrint(
@@ -93,7 +93,7 @@ class _SocketAwareWidgetState extends State<SocketAwareWidget> {
               ElevatedButton.icon(
                 onPressed: () async {
                   // Try to reconnect
-                  final socketService = SocketService();
+                  final socketService = SocketService.instance;
                   await socketService.connect();
                   // Check again
                   _checkConnection();

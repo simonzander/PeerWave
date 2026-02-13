@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -262,9 +263,12 @@ List<GoRoute> getAuthRoutesNative({required String clientId}) {
       pageBuilder: (context, state) {
         final extra = state.extra as Map<String, dynamic>?;
         final isAddingServer = extra?['isAddingServer'] as bool? ?? false;
+        final isMobile = Platform.isAndroid || Platform.isIOS;
         return MaterialPage(
           fullscreenDialog: true,
-          child: ServerSelectionScreen(isAddingServer: isAddingServer),
+          child: isMobile
+              ? const MobileServerSelectionScreen()
+              : ServerSelectionScreen(isAddingServer: isAddingServer),
         );
       },
     ),
@@ -295,22 +299,7 @@ List<GoRoute> getAuthRoutesNative({required String clientId}) {
       },
     ),
 
-    GoRoute(
-      path: '/login',
-      pageBuilder: (context, state) {
-        final qp = state.uri.queryParameters;
-        final fromApp = (qp['from'] ?? '').trim().toLowerCase() == 'app';
-        final email = qp['email']?.trim();
-        return MaterialPage(
-          fullscreenDialog: true,
-          child: AuthLayout(
-            clientId: clientId,
-            fromApp: fromApp,
-            initialEmail: email,
-          ),
-        );
-      },
-    ),
+    GoRoute(path: '/login', redirect: (context, state) => '/server-selection'),
   ];
 }
 

@@ -8,7 +8,6 @@ import 'download_manager.dart';
 import 'storage_interface.dart';
 import 'encryption_service.dart';
 import 'socket_file_client.dart';
-import '../signal_service.dart';
 import 'chunking_service.dart';
 import '../../models/seeder_info.dart';
 import '../../providers/file_transfer_stats_provider.dart';
@@ -36,7 +35,6 @@ class P2PCoordinator extends ChangeNotifier {
   final DownloadManager downloadManager;
   final FileStorageInterface storage;
   final EncryptionService encryptionService;
-  final SignalService signalService;
   final SocketFileClient socketClient;
   final ChunkingService chunkingService;
   final FileTransferStatsProvider? statsProvider;
@@ -108,7 +106,6 @@ class P2PCoordinator extends ChangeNotifier {
     required this.downloadManager,
     required this.storage,
     required this.encryptionService,
-    required this.signalService,
     required this.socketClient,
     required this.chunkingService,
     this.statsProvider,
@@ -367,49 +364,15 @@ class P2PCoordinator extends ChangeNotifier {
       '[P2P] Registered key request for $fileId, pending requests now: ${_keyRequests.keys.toList()}',
     );
 
-    try {
-      // Send key request via Signal Protocol (end-to-end encrypted)
-      // Uses Item model with type 'fileKeyRequest'
-      // The seeder will receive this via their _handleKeyRequest callback
-      await signalService.sendItem(
-        recipientUserId: peerId,
-        type: 'fileKeyRequest',
-        payload: jsonEncode({
-          'fileId': fileId,
-          'timestamp': DateTime.now().toIso8601String(),
-        }),
-      );
-
-      debugPrint(
-        '[P2P] Key request sent via Signal Protocol, waiting for response...',
-      );
-
-      // Wait for response with timeout
-      // Response will arrive via _handleKeyResponse callback which completes the completer
-      final key = await completer.future.timeout(
-        _keyRequestTimeout,
-        onTimeout: () {
-          debugPrint(
-            '[P2P] KEY REQUEST TIMEOUT after ${_keyRequestTimeout.inSeconds}s for $fileId',
-          );
-          _keyRequests.remove(fileId);
-          throw TimeoutException(
-            'Key request timed out after ${_keyRequestTimeout.inSeconds}s',
-          );
-        },
-      );
-
-      _keyRequests.remove(fileId);
-      debugPrint('[P2P] Received file key for $fileId (${key.length} bytes)');
-      debugPrint(
-        '[P2P] Key can now be used to decrypt chunks received via WebRTC',
-      );
-      return key;
-    } catch (e) {
-      _keyRequests.remove(fileId);
-      debugPrint('[P2P] Key request failed: $e');
-      rethrow;
-    }
+    // TODO: Re-implement with SignalClient
+    debugPrint(
+      '[P2P] ⚠️ Signal Protocol key exchange not yet implemented with SignalClient',
+    );
+    completer.completeError('Signal Protocol key exchange not yet implemented');
+    _keyRequests.remove(fileId);
+    throw Exception(
+      'Signal Protocol key exchange not yet implemented with SignalClient',
+    );
   }
 
   /// Cancel download and cleanup
@@ -502,16 +465,17 @@ class P2PCoordinator extends ChangeNotifier {
     });
   }
 
-  void _setupSignalCallbacks() {
-    // Register callback for incoming file key requests
-    signalService.registerItemCallback('fileKeyRequest', (dynamic item) {
-      _handleKeyRequest(Map<String, dynamic>.from(item));
-    });
+  void _setupSignalCallbacks() async {
+    // TODO: Implement with SignalClient's callback registration system
+    // This needs to be implemented when SignalClient's messaging callback system is ready
+    // For now, callbacks would be registered like:
+    // final signalClient = await ServerSettingsService.instance.getOrCreateSignalClient();
+    // signalClient.registerReceiveItemType('fileKeyRequest', _handleKeyRequest);
+    // signalClient.registerReceiveItemType('fileKeyResponse', _handleKeyResponse);
 
-    // Register callback for incoming file key responses
-    signalService.registerItemCallback('fileKeyResponse', (dynamic item) {
-      _handleKeyResponse(Map<String, dynamic>.from(item));
-    });
+    debugPrint(
+      '[P2P] Signal callbacks setup - TODO: implement with SignalClient callback system',
+    );
   }
 
   /// Handle incoming key request (we are the seeder)
@@ -540,15 +504,17 @@ class P2PCoordinator extends ChangeNotifier {
         );
 
         // Send error response via Signal
-        await signalService.sendItem(
-          recipientUserId: sender,
-          type: 'fileKeyResponse',
-          payload: jsonEncode({
-            'fileId': fileId,
-            'error': 'Key not found',
-            'timestamp': DateTime.now().toIso8601String(),
-          }),
-        );
+        // TODO: Re-implement with SignalClient when send1to1Message supports custom types
+        debugPrint('[P2P SEEDER] TODO: Send error response via SignalClient');
+        // await signalClient.messagingService.send1to1Message(
+        //   recipientUserId: sender,
+        //   type: 'fileKeyResponse',
+        //   payload: jsonEncode({
+        //     'fileId': fileId,
+        //     'error': 'Key not found',
+        //     'timestamp': DateTime.now().toIso8601String(),
+        //   }),
+        // );
 
         debugPrint('[P2P SEEDER] ✗ Sent error response to $sender');
         debugPrint('[P2P SEEDER] ========================================');
@@ -568,15 +534,19 @@ class P2PCoordinator extends ChangeNotifier {
         );
 
         // Send error instead of wrong key
-        await signalService.sendItem(
-          recipientUserId: sender,
-          type: 'fileKeyResponse',
-          payload: jsonEncode({
-            'fileId': fileId,
-            'error': 'Invalid key size: ${key.length} bytes (expected 32)',
-            'timestamp': DateTime.now().toIso8601String(),
-          }),
+        // TODO: Re-implement with SignalClient when send1to1Message supports custom types
+        debugPrint(
+          '[P2P SEEDER] TODO: Send invalid key size error via SignalClient',
         );
+        // await signalClient.messagingService.send1to1Message(
+        //   recipientUserId: sender,
+        //   type: 'fileKeyResponse',
+        //   payload: jsonEncode({
+        //     'fileId': fileId,
+        //     'error': 'Invalid key size: ${key.length} bytes (expected 32)',
+        //     'timestamp': DateTime.now().toIso8601String(),
+        //   }),
+        // );
         return;
       }
 
@@ -592,15 +562,19 @@ class P2PCoordinator extends ChangeNotifier {
       );
       debugPrint('[P2P SEEDER] ✓ Original key was ${key.length} bytes');
 
-      await signalService.sendItem(
-        recipientUserId: sender,
-        type: 'fileKeyResponse',
-        payload: jsonEncode({
-          'fileId': fileId,
-          'key': keyBase64,
-          'timestamp': DateTime.now().toIso8601String(),
-        }),
+      // TODO: Re-implement with SignalClient when send1to1Message supports custom types
+      debugPrint(
+        '[P2P SEEDER] TODO: Send key via SignalClient.messagingService.send1to1Message',
       );
+      // await signalClient.messagingService.send1to1Message(
+      //   recipientUserId: sender,
+      //   type: 'fileKeyResponse',
+      //   payload: jsonEncode({
+      //     'fileId': fileId,
+      //     'key': keyBase64,
+      //     'timestamp': DateTime.now().toIso8601String(),
+      //   }),
+      // );
 
       debugPrint('[P2P SEEDER] ✓ Successfully sent encrypted key to $sender');
       debugPrint('[P2P SEEDER] ✓ Downloader can now decrypt chunks via WebRTC');
@@ -613,15 +587,17 @@ class P2PCoordinator extends ChangeNotifier {
       try {
         final sender = item['sender'];
         final fileId = jsonDecode(item['message'])['fileId'];
-        await signalService.sendItem(
-          recipientUserId: sender,
-          type: 'fileKeyResponse',
-          payload: jsonEncode({
-            'fileId': fileId,
-            'error': 'Internal error: $e',
-            'timestamp': DateTime.now().toIso8601String(),
-          }),
-        );
+        // TODO: Re-implement with SignalClient when send1to1Message supports custom types
+        debugPrint('[P2P SEEDER] TODO: Send error response via SignalClient');
+        // await signalClient.messagingService.send1to1Message(
+        //   recipientUserId: sender,
+        //   type: 'fileKeyResponse',
+        //   payload: jsonEncode({
+        //     'fileId': fileId,
+        //     'error': 'Internal error: $e',
+        //     'timestamp': DateTime.now().toIso8601String(),
+        //   }),
+        // );
       } catch (_) {
         debugPrint('[P2P SEEDER] Could not send error response');
       }

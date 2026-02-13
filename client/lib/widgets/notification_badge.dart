@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/notification_provider.dart';
+import '../providers/unread_messages_provider.dart';
 
 /// Badge widget that shows unread message count
 class NotificationBadge extends StatelessWidget {
@@ -19,12 +19,14 @@ class NotificationBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<NotificationProvider>(
-      builder: (context, notificationProvider, _) {
-        final key = channelId ?? userId;
-        final count = key != null
-            ? notificationProvider.getUnreadCount(key)
-            : 0;
+    return Consumer<UnreadMessagesProvider>(
+      builder: (context, unreadProvider, _) {
+        int count = 0;
+        if (channelId != null && channelId!.isNotEmpty) {
+          count = unreadProvider.getChannelUnreadCount(channelId!);
+        } else if (userId != null && userId!.isNotEmpty) {
+          count = unreadProvider.getDirectMessageUnreadCount(userId!);
+        }
 
         if (count == 0 && !showZero) {
           return child;
@@ -71,9 +73,11 @@ class GlobalNotificationBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<NotificationProvider>(
-      builder: (context, notificationProvider, _) {
-        final count = notificationProvider.totalUnreadCount;
+    return Consumer<UnreadMessagesProvider>(
+      builder: (context, unreadProvider, _) {
+        final count =
+            unreadProvider.totalDirectMessageUnread +
+            unreadProvider.totalChannelUnread;
 
         if (count == 0) {
           return child;

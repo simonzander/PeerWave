@@ -132,9 +132,9 @@ class MagicKeyService {
       }
 
       // Construct full API URL using server URL from magic key
-      final verifyUrl = '${parsed.serverUrl}/magic/verify';
-
-      debugPrint('[MagicKey] Verifying with server: $verifyUrl');
+      debugPrint(
+        '[MagicKey] Verifying with server: ${parsed.serverUrl}/magic/verify',
+      );
       debugPrint('[MagicKey] Client ID: $clientId');
 
       // Get device info for native platforms
@@ -154,7 +154,11 @@ class MagicKeyService {
         requestData['deviceInfo'] = deviceInfo;
       }
 
-      final response = await ApiService.post(verifyUrl, data: requestData);
+      final response = await ApiService.instance.postToServer(
+        serverUrl: parsed.serverUrl,
+        path: '/magic/verify',
+        data: requestData,
+      );
 
       if (response.statusCode == 200) {
         final data = response.data;

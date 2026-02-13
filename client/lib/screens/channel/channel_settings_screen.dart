@@ -109,9 +109,9 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
     setState(() => _isSaving = true);
 
     try {
-      ApiService.init();
+      await ApiService.instance.init();
 
-      final resp = await ApiService.updateChannel(
+      final resp = await ApiService.instance.updateChannel(
         widget.channelId,
         name: _nameController.text.trim(),
         description: _descriptionController.text.trim(),
@@ -203,9 +203,9 @@ class _ChannelSettingsScreenState extends State<ChannelSettingsScreen> {
     setState(() => _isSaving = true);
 
     try {
-      ApiService.init();
+      await ApiService.instance.init();
 
-      final resp = await ApiService.delete(
+      final resp = await ApiService.instance.delete(
         '/client/channels/${widget.channelId}',
       );
 

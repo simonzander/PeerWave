@@ -3,9 +3,7 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:uuid/uuid.dart';
-import '../web_config.dart';
 import '../core/metrics/network_metrics.dart';
-import 'signal_service.dart';
 import 'session_auth_service.dart';
 import 'clientid_native.dart' if (dart.library.js) 'clientid_web.dart';
 import 'server_connection_service.dart';
@@ -13,6 +11,7 @@ import 'server_config_web.dart'
     if (dart.library.io) 'server_config_native.dart';
 // Import auth service conditionally
 import 'auth_service_web.dart' if (dart.library.io) 'auth_service_native.dart';
+import 'server_settings_service.dart';
 
 /// Callback for handling socket unauthorized events
 typedef SocketUnauthorizedCallback = void Function();
@@ -27,18 +26,9 @@ void setSocketUnauthorizedHandler(SocketUnauthorizedCallback callback) {
 
 class SocketService {
   static final SocketService _instance = SocketService._internal();
-  factory SocketService() {
-    debugPrint(
-      '[SOCKET SERVICE] 🏭 Factory constructor called, returning instance: ${_instance.hashCode}',
-    );
-    return _instance;
-  }
-  SocketService._internal() {
-    debugPrint(
-      '[SOCKET SERVICE] 🏗️ Private constructor called, creating NEW instance',
-    );
-  }
+  static SocketService get instance => _instance;
 
+  String? _serverUrl; // Current server URL (web only supports one)
   io.Socket? _socket;
   final Map<String, List<void Function(dynamic)>> _listeners = {};
   bool _connecting = false;
@@ -50,6 +40,17 @@ class SocketService {
   final Map<String, Map<String, Function(dynamic)>> _namedListeners = {};
   final Map<String, Function(dynamic)> _wrappedCallbacks =
       {}; // event_registrationName -> wrappedCallback
+
+  /// Private constructor for singleton
+  SocketService._internal() {
+    debugPrint('[SOCKET SERVICE] 🏗️ Creating singleton instance (web)');
+  }
+
+  /// Initialize with server URL (web only supports one server)
+  void setServerUrl(String serverUrl) {
+    _serverUrl = serverUrl;
+    debugPrint('[SOCKET SERVICE] Server URL set to: $serverUrl');
+  }
 
   // Public getter for socket (needed by SocketFileClient)
   io.Socket? get socket => _socket;
@@ -88,8 +89,11 @@ class SocketService {
     if (_connecting) return;
     _connecting = true;
     try {
-      final apiServer = await loadWebApiServer();
-      String urlString = apiServer ?? '';
+      // Use the serverUrl from the instance
+      if (_serverUrl == null) {
+        throw Exception('Server URL not set. Call setServerUrl() first.');
+      }
+      String urlString = _serverUrl!;
       if (!urlString.startsWith('http://') &&
           !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
@@ -148,17 +152,23 @@ class SocketService {
           return;
         }
         // Store user info in SignalService for device filtering
-        if (data is Map &&
-            data['authenticated'] == true &&
-            data['uuid'] != null &&
-            data['deviceId'] != null) {
-          // Parse deviceId as int (server sends String)
-          final deviceId = data['deviceId'] is int
-              ? data['deviceId'] as int
-              : int.parse(data['deviceId'].toString());
-          SignalService.instance.setCurrentUserInfo(data['uuid'], deviceId);
+        if (data is Map && data['authenticated'] == true) {
+          // Store device ID from server authentication
+          if (data['deviceId'] != null) {
+            final deviceId = data['deviceId'] as int;
+            final serverId = 'web'; // Web only has one server
+            debugPrint(
+              '[SOCKET SERVICE] Storing device ID from server: $deviceId for server: $serverId',
+            );
+
+            // Store in ServerSettingsService (in-memory cache)
+            ServerSettingsService.instance.setDeviceId(serverId, deviceId);
+          }
+
+          // SignalClient gets user info via callbacks on initialization
+          // No need to set it here via deprecated SignalService
           debugPrint(
-            '[SOCKET SERVICE] User info set, socket still connected: ${_socket?.connected}',
+            '[SOCKET SERVICE] Authenticated, socket still connected: ${_socket?.connected}',
           );
 
           // 🚀 CRITICAL: If listeners are already registered, notify server immediately after auth

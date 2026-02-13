@@ -236,8 +236,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
       );
 
       // Get all users
-      ApiService.init();
-      final resp = await ApiService.get('/people/list');
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.get('/people/list');
 
       if (resp.statusCode == 200) {
         final List<dynamic> allUsers = resp.data is List
@@ -340,8 +340,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
     try {
       debugPrint('[PEOPLE_SCREEN] Searching for: $query');
 
-      ApiService.init();
-      final resp = await ApiService.get('/people/list');
+      await ApiService.instance.init();
+      final resp = await ApiService.instance.get('/people/list');
 
       if (resp.statusCode == 200) {
         final List<dynamic> allUsers = resp.data is List

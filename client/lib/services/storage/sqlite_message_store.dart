@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'dart:convert';
 import 'database_helper.dart';
 import 'database_encryption_service.dart';
+import 'sqlite_recent_conversations_store.dart';
 import '../user_profile_service.dart';
 
 /// SQLite-based message store for both 1:1 and group messages
@@ -148,6 +149,62 @@ class SqliteMessageStore {
     debugPrint(
       '[SQLITE_MESSAGE_STORE] Stored received message: $itemId (type: $type, sender: $sender, channel: $channelId) [ENCRYPTED]',
     );
+
+    // Update recent conversations table (only for 1:1 messages, not group messages)
+    // Include decrypt_failed messages so user knows someone tried to message them
+    if (channelId == null) {
+      try {
+        final conversationsStore =
+            await SqliteRecentConversationsStore.getInstance();
+
+        // Check if conversation exists
+        final existingConv = await conversationsStore.getConversation(sender);
+
+        // Check if this is a multi-device sync message (sender is current user)
+        final currentUserId = UserProfileService.instance.currentUserUuid;
+        final isMultiDeviceSync = (sender == currentUserId);
+
+        if (existingConv != null) {
+          // Update existing conversation
+          if (isMultiDeviceSync) {
+            // Multi-device sync: only update timestamp, don't increment unread
+            await conversationsStore.updateTimestamp(sender);
+            debugPrint(
+              '[SQLITE_MESSAGE_STORE] ✓ Updated conversation timestamp (multi-device sync): $sender',
+            );
+          } else {
+            // Normal received message: increment unread count
+            await conversationsStore.incrementUnreadCount(sender);
+            debugPrint(
+              '[SQLITE_MESSAGE_STORE] ✓ Updated recent conversation for: $sender',
+            );
+          }
+        } else {
+          // Create new conversation entry
+          // Get display name from UserProfileService
+          final displayName = UserProfileService.instance.getDisplayNameOrUuid(
+            sender,
+          );
+          String? picture;
+
+          await conversationsStore.addOrUpdateConversation(
+            userId: sender,
+            displayName: displayName,
+            picture: picture,
+            unreadCount: isMultiDeviceSync
+                ? 0
+                : 1, // No unread for multi-device sync
+          );
+          debugPrint(
+            '[SQLITE_MESSAGE_STORE] ✓ Created new conversation entry for: $sender',
+          );
+        }
+      } catch (e) {
+        debugPrint(
+          '[SQLITE_MESSAGE_STORE] ⚠️ Failed to update recent conversations: $e',
+        );
+      }
+    }
   }
 
   /// Store a sent message (1:1 or group)
@@ -198,6 +255,46 @@ class SqliteMessageStore {
     debugPrint(
       '[SQLITE_MESSAGE_STORE] Stored sent message: $itemId (type: $type, status: $status, recipient: $recipientId, channel: $channelId) [ENCRYPTED]',
     );
+
+    // Update recent conversations table (only for 1:1 messages, not group messages)
+    if (channelId == null) {
+      try {
+        final conversationsStore =
+            await SqliteRecentConversationsStore.getInstance();
+
+        // Check if conversation exists
+        final existingConv = await conversationsStore.getConversation(
+          recipientId,
+        );
+
+        if (existingConv != null) {
+          // Update timestamp for existing conversation (don't increment unread for sent messages)
+          await conversationsStore.updateTimestamp(recipientId);
+          debugPrint(
+            '[SQLITE_MESSAGE_STORE] ✓ Updated recent conversation timestamp for: $recipientId',
+          );
+        } else {
+          // Create new conversation entry
+          final displayName = UserProfileService.instance.getDisplayNameOrUuid(
+            recipientId,
+          );
+
+          await conversationsStore.addOrUpdateConversation(
+            userId: recipientId,
+            displayName: displayName,
+            picture: null,
+            unreadCount: 0, // No unread for sent messages
+          );
+          debugPrint(
+            '[SQLITE_MESSAGE_STORE] ✓ Created new conversation entry for: $recipientId',
+          );
+        }
+      } catch (e) {
+        debugPrint(
+          '[SQLITE_MESSAGE_STORE] ⚠️ Failed to update recent conversations: $e',
+        );
+      }
+    }
   }
 
   /// Get all messages from a 1:1 conversation (both directions)
@@ -309,17 +406,25 @@ class SqliteMessageStore {
   }
 
   /// Get all unique conversation partners (1:1 only)
+  /// Returns user IDs for all 1:1 conversations (both sent and received)
   Future<Set<String>> getAllUniqueConversationPartners() async {
     final db = await DatabaseHelper.database;
 
+    // Get unique senders from messages table
+    // Note: For sent messages, 'sender' field contains the recipient's UUID
+    // For received messages, 'sender' field contains the actual sender's UUID
     final result = await db.rawQuery('''
       SELECT DISTINCT sender 
       FROM messages 
       WHERE channel_id IS NULL 
         AND sender != 'self'
-        AND type != 'read_receipt'
+        AND type NOT IN ('read_receipt', 'delivery_receipt')
       ORDER BY timestamp DESC
     ''');
+
+    debugPrint(
+      '[SQLITE_MESSAGE_STORE] Found ${result.length} unique conversation partners',
+    );
 
     return result.map((row) => row['sender'] as String).toSet();
   }
@@ -447,6 +552,48 @@ class SqliteMessageStore {
         '[SQLITE_MESSAGE_STORE] ⚠️ Message not found for status update: $itemId',
       );
     }
+  }
+
+  /// Update message metadata (merges with existing metadata)
+  Future<void> updateMessageMetadata(
+    String itemId,
+    Map<String, dynamic> metadata,
+  ) async {
+    final db = await DatabaseHelper.database;
+
+    Map<String, dynamic> merged = {};
+    try {
+      final existing = await db.query(
+        'messages',
+        columns: ['metadata'],
+        where: 'item_id = ?',
+        whereArgs: [itemId],
+        limit: 1,
+      );
+
+      if (existing.isNotEmpty && existing.first['metadata'] != null) {
+        try {
+          merged =
+              jsonDecode(existing.first['metadata'] as String)
+                  as Map<String, dynamic>;
+        } catch (e) {
+          debugPrint('[SQLITE_MESSAGE_STORE] Failed to parse metadata: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('[SQLITE_MESSAGE_STORE] Failed to read metadata: $e');
+    }
+
+    merged.addAll(metadata);
+
+    await db.update(
+      'messages',
+      {'metadata': jsonEncode(merged)},
+      where: 'item_id = ?',
+      whereArgs: [itemId],
+    );
+
+    debugPrint('[SQLITE_MESSAGE_STORE] Updated metadata for: $itemId');
   }
 
   /// Mark message as delivered
@@ -649,6 +796,8 @@ class SqliteMessageStore {
       'status': row['status'], // Include status for sent messages
       'decryptedAt': row['decrypted_at'],
       'metadata': metadata, // Include parsed metadata for image/voice messages
+      if (metadata != null && metadata['originalRecipient'] != null)
+        'originalRecipient': metadata['originalRecipient'],
       'reactions': row['reactions'] ?? '{}', // Include reactions
     };
   }

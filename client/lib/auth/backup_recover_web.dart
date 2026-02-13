@@ -37,7 +37,7 @@ class _BackupCodeRecoveryPageState extends State<BackupCodeRecoveryPage> {
         final jsClientId = web.window.localStorage.getItem('clientId');
         clientId = jsClientId;
       } catch (_) {}
-      final resp = await ApiService.post(
+      final resp = await ApiService.instance.post(
         '/backupcode/verify',
         data: {
           'code': backupCodeController.text,

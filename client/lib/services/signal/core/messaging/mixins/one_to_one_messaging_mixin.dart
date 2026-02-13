@@ -1,0 +1,287 @@
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
+import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
+
+import '../../../../api_service.dart';
+import '../../../../socket_service.dart'
+    if (dart.library.io) '../../../../socket_service_native.dart';
+import '../../../../storage/sqlite_message_store.dart';
+import '../../encryption_service.dart';
+import '../../key_manager.dart';
+import '../../session_manager.dart';
+
+/// Mixin for 1-to-1 messaging operations
+mixin OneToOneMessagingMixin {
+  // Required getters from main service
+  EncryptionService get encryptionService;
+  ApiService get apiService;
+  SocketService get socketService;
+  String get currentUserId;
+  int get currentDeviceId;
+
+  SessionManager get sessionStore;
+  SignalKeyManager get preKeyStore;
+  SignalKeyManager get signedPreKeyStore;
+  SignalKeyManager get identityStore;
+
+  /// Send 1-to-1 encrypted message to a user
+  ///
+  /// Handles:
+  /// - Multi-device messaging (encrypts for all recipient devices)
+  /// - Session establishment if needed
+  /// - Message encryption using Signal Protocol
+  /// - Local message storage
+  ///
+  /// [targetDeviceId] - Optional: When specified, only sends to that specific device.
+  ///                    Useful for peer-to-peer scenarios like video conference key exchange.
+  Future<String> send1to1Message({
+    required String recipientUserId,
+    required String type,
+    required String payload,
+    String? itemId,
+    int? targetDeviceId,
+  }) async {
+    final generatedItemId = itemId ?? const Uuid().v4();
+
+    debugPrint('[1-TO-1] Sending message to $recipientUserId (type: $type)');
+    if (targetDeviceId != null) {
+      debugPrint('[1-TO-1] Targeting specific device: $targetDeviceId');
+    }
+
+    try {
+      // Get recipient's devices
+      final devices = await _fetchRecipientDevices(
+        recipientUserId,
+        targetDeviceId: targetDeviceId,
+      );
+
+      if (devices.isEmpty) {
+        throw Exception('No devices found for user $recipientUserId');
+      }
+
+      debugPrint(
+        '[1-TO-1] Found ${devices.length} devices for $recipientUserId',
+      );
+
+      // Encrypt for each device
+      final encryptedMessages = <Map<String, dynamic>>[];
+      int encryptionAttempts = 0;
+
+      for (final device in devices) {
+        // Handle both String and int device_id from API
+        final deviceIdRaw = device['device_id'];
+        final deviceId = deviceIdRaw is int
+            ? deviceIdRaw
+            : int.parse(deviceIdRaw.toString());
+
+        // Get the actual userId for this device (could be recipient OR sender's other device)
+        final deviceUserId = device['userId'] as String?;
+        if (deviceUserId == null) {
+          debugPrint('[1-TO-1] Skipping device with null userId');
+          continue;
+        }
+
+        final recipientAddress = SignalProtocolAddress(
+          deviceUserId, // Use actual device's userId, not always recipientUserId
+          deviceId,
+        );
+
+        encryptionAttempts++;
+        debugPrint(
+          '[1-TO-1] Encrypting for device $deviceUserId:$deviceId (attempt $encryptionAttempts/${devices.length})',
+        );
+
+        try {
+          // Check if session exists, establish if needed via SessionManager
+          final hasSession = await sessionStore.containsSession(
+            recipientAddress,
+          );
+
+          if (!hasSession) {
+            debugPrint(
+              '[1-TO-1] No session with $deviceUserId:$deviceId, establishing...',
+            );
+            // Use SessionManager to establish session (handles fetching bundles, building session)
+            final success = await sessionStore.establishSessionWithUser(
+              deviceUserId,
+            );
+            if (!success) {
+              throw Exception('Failed to establish session with $deviceUserId');
+            }
+          }
+
+          // Encrypt message
+          final ciphertext = await encryptionService.encryptMessage(
+            recipientAddress: recipientAddress,
+            plaintext: Uint8List.fromList(utf8.encode(payload)),
+          );
+
+          encryptedMessages.add({
+            'deviceId': deviceId,
+            'userId': deviceUserId, // Track which user this message is for
+            'ciphertext': base64Encode(ciphertext.serialize()),
+            'cipherType': ciphertext.getType(),
+          });
+        } catch (e) {
+          debugPrint('[1-TO-1] Failed to encrypt for device $deviceId: $e');
+          // Continue with other devices
+        }
+      }
+
+      if (encryptedMessages.isEmpty) {
+        throw Exception('Failed to encrypt message for any device');
+      }
+
+      // Send to server - one emit per device
+      for (final message in encryptedMessages) {
+        final messageUserId = message['userId'] as String;
+
+        final data = {
+          'itemId': generatedItemId,
+          'recipient': messageUserId, // Use actual device's userId
+          'recipientDeviceId': message['deviceId'] as int,
+          'type': type,
+          'payload': message['ciphertext'] as String,
+          'cipherType': (message['cipherType'] as int).toString(),
+          'timestamp': DateTime.now().toIso8601String(),
+          'originalRecipient':
+              recipientUserId, // Always set - shows conversation context
+        };
+
+        debugPrint(
+          '[1-TO-1] Sending to device ${message['deviceId']}: itemId=$generatedItemId, cipherType=${message['cipherType']}',
+        );
+        socketService.emit("sendItem", data);
+      }
+
+      // Store locally (skip ephemeral/system messages - they're control messages)
+      const ephemeralTypes = {
+        // E2EE key exchange
+        'meeting_e2ee_key_request',
+        'meeting_e2ee_key_response',
+        'video_e2ee_key_request',
+        'video_e2ee_key_response',
+        // Signal Protocol control messages
+        'read_receipt',
+        'delivery_receipt',
+        'senderKeyRequest',
+        'fileKeyRequest',
+        'signal:senderKeyDistribution',
+        'signal:session_reset_request',
+        // Call signaling
+        'call_notification',
+      };
+
+      if (!ephemeralTypes.contains(type)) {
+        await storeOutgoingMessage(
+          itemId: generatedItemId,
+          recipientId: recipientUserId,
+          message: payload,
+          type: type,
+        );
+      } else {
+        debugPrint(
+          '[1-TO-1] Skipping storage for ephemeral message type: $type',
+        );
+      }
+
+      debugPrint('[1-TO-1] ✓ Message sent: $generatedItemId');
+      return generatedItemId;
+    } catch (e, stackTrace) {
+      debugPrint('[1-TO-1] ❌ Failed to send message: $e');
+      debugPrint('[1-TO-1] Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Fetch all devices for a user
+  ///
+  /// [targetDeviceId] - Optional: When specified, filters to only that device.
+  ///                    Used for peer-to-peer scenarios where messages should
+  ///                    only go to a specific device (e.g., video conference key exchange).
+  Future<List<Map<String, dynamic>>> _fetchRecipientDevices(
+    String userId, {
+    int? targetDeviceId,
+  }) async {
+    final response = await apiService.get('/signal/prekey_bundle/$userId');
+
+    // The response is a list of PreKeyBundles for recipient's devices
+    // AND sender's other devices (for multi-device sync)
+    final devices =
+        (response.data is String ? jsonDecode(response.data) : response.data)
+            as List;
+
+    // Filter logic:
+    // 1. Always filter out the current sender device (don't send to ourselves)
+    // 2. If targetDeviceId is specified, only keep that specific device
+    // 3. Otherwise, keep all recipient devices + sender's other devices (multi-device sync)
+    final filteredDevices = devices.where((device) {
+      final deviceUserId = device['userId'] as String?;
+      final deviceIdRaw = device['device_id'];
+      final deviceId = deviceIdRaw is int
+          ? deviceIdRaw
+          : int.parse(deviceIdRaw.toString());
+
+      // Filter out current device (don't send to ourselves)
+      final isCurrentDevice =
+          (deviceUserId == currentUserId && deviceId == currentDeviceId);
+
+      if (isCurrentDevice) {
+        debugPrint(
+          '[1-TO-1] ⚠️ Filtering out current device: $deviceUserId:$deviceId',
+        );
+        return false;
+      }
+
+      // If targetDeviceId is specified, only keep that specific device
+      if (targetDeviceId != null) {
+        final isTargetDevice =
+            (deviceUserId == userId && deviceId == targetDeviceId);
+        if (!isTargetDevice) {
+          debugPrint(
+            '[1-TO-1] ⚠️ Filtering out non-target device: $deviceUserId:$deviceId',
+          );
+        }
+        return isTargetDevice;
+      }
+
+      // Otherwise, keep all other devices (multi-device sync)
+      return true;
+    }).toList();
+
+    if (targetDeviceId != null) {
+      debugPrint(
+        '[1-TO-1] Filtered to target device $targetDeviceId: ${filteredDevices.length} device(s)',
+      );
+    } else {
+      debugPrint(
+        '[1-TO-1] Filtered ${filteredDevices.length} devices (from ${devices.length} total, excluding current device $currentUserId:$currentDeviceId)',
+      );
+    }
+
+    return filteredDevices.cast<Map<String, dynamic>>();
+  }
+
+  /// Store outgoing message locally
+  Future<void> storeOutgoingMessage({
+    required String itemId,
+    required String recipientId,
+    required String message,
+    required String type,
+  }) async {
+    try {
+      final messageStore = await SqliteMessageStore.getInstance();
+      await messageStore.storeSentMessage(
+        itemId: itemId,
+        recipientId: recipientId,
+        message: message,
+        timestamp: DateTime.now().toIso8601String(),
+        type: type,
+      );
+    } catch (e) {
+      debugPrint('[1-TO-1] Failed to store outgoing message: $e');
+    }
+  }
+}

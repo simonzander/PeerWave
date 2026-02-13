@@ -153,7 +153,7 @@ class _AuthLayoutState extends State<AuthLayout> {
         final deviceId = await _getDeviceId();
         if (token != null && serverUrl.isNotEmpty) {
           try {
-            final resp = await ApiService.post(
+            final resp = await ApiService.instance.post(
               '$serverUrl/magic/verify',
               data: {'token': token, 'deviceId': deviceId},
             );
@@ -379,7 +379,10 @@ class _AuthLayoutState extends State<AuthLayout> {
           !urlString.startsWith('https://')) {
         urlString = 'https://$urlString';
       }
-      final resp = await ApiService.post('/register', data: {'email': email});
+      final resp = await ApiService.instance.post(
+        '/register',
+        data: {'email': email},
+      );
       if (resp.statusCode == 200) {
         final data = resp.data;
         if (!mounted) return;
@@ -896,7 +899,7 @@ class _AuthLayoutState extends State<AuthLayout> {
   Future<void> _showAboutServerDialog(BuildContext context) async {
     try {
       // Fetch server metadata including operator info
-      final resp = await ApiService.get('/client/meta');
+      final resp = await ApiService.instance.get('/client/meta');
       if (resp.statusCode == 200) {
         final data = resp.data;
         final serverOperator = data['serverOperator'] as Map<String, dynamic>?;
