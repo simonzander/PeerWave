@@ -9,7 +9,7 @@ project:
 client:
   # Semantic versioning: MAJOR.MINOR.PATCH
   version: "1.4.1"
-  build_number: 2
+  build_number: 3
   
   # Server compatibility range
   min_server_version: "1.4.0"
