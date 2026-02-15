@@ -80,7 +80,7 @@ class SyncListeners {
           debugPrint('[SYNC_LISTENERS] Syncing $count messages...');
 
           // Request pending messages in batches
-          socket.emit('requestPendingMessages', {'batchSize': 50});
+          _requestPendingMessages(socket, limit: 50, offset: 0);
         }
       } catch (e, stack) {
         debugPrint(
@@ -94,23 +94,29 @@ class SyncListeners {
     // Batch of pending messages received
     socket.registerListener('pendingMessagesResponse', (data) async {
       try {
-        final messages = data['messages'] as List? ?? [];
+        final items =
+            (data['items'] as List?) ?? (data['messages'] as List?) ?? [];
         final hasMore = data['hasMore'] as bool? ?? false;
+        final offset = data['offset'] as int? ?? 0;
 
         debugPrint(
-          '[SYNC_LISTENERS] Received ${messages.length} messages, '
+          '[SYNC_LISTENERS] Received ${items.length} messages, '
           'hasMore: $hasMore',
         );
 
         // Process each message
-        for (final message in messages) {
+        for (final message in items) {
           await _processPendingMessage(message);
           // syncState.incrementProcessed();
         }
 
         // Request next batch if available
         if (hasMore) {
-          socket.emit('requestPendingMessages', {'batchSize': 50});
+          _requestPendingMessages(
+            socket,
+            limit: 50,
+            offset: offset + items.length,
+          );
         } else {
           // syncState.completeSync();
           debugPrint('[SYNC_LISTENERS] ✓ Sync complete');
@@ -229,5 +235,13 @@ class SyncListeners {
       debugPrint('[SYNC_LISTENERS] Stack: $stack');
       // Continue processing other messages
     }
+  }
+
+  static void _requestPendingMessages(
+    SocketService socket, {
+    required int limit,
+    required int offset,
+  }) {
+    socket.emit('fetchPendingMessages', {'limit': limit, 'offset': offset});
   }
 }

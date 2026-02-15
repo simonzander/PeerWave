@@ -1037,57 +1037,72 @@ io.sockets.on("connection", socket => {
     }
   });
 
-  // 🚀 NEW: Fetch pending messages with pagination
-  socket.on("fetchPendingMessages", async (data) => {
+  const fetchPendingMessages = async (data, sourceEvent) => {
     try {
       if (!isAuthenticated()) {
-        logger.error('[SIGNAL SERVER] fetchPendingMessages blocked - not authenticated');
+        logger.error(`[SIGNAL SERVER] ${sourceEvent} blocked - not authenticated`);
         socket.emit("fetchPendingMessagesError", { error: 'Not authenticated' });
         return;
       }
 
       const userId = getUserId();
       const deviceId = getDeviceId();
-      const { limit = 20, offset = 0 } = data;
+      const rawLimit = data?.limit ?? data?.batchSize ?? 20;
+      const rawOffset = data?.offset ?? 0;
+      const limit = Number.isFinite(parseInt(rawLimit, 10))
+        ? parseInt(rawLimit, 10)
+        : 20;
+      const offset = Number.isFinite(parseInt(rawOffset, 10))
+        ? parseInt(rawOffset, 10)
+        : 0;
 
-      logger.info(`[SIGNAL SERVER] Fetching pending messages: limit=${limit}, offset=${offset}`);
+      logger.info(
+        `[SIGNAL SERVER] Fetching pending messages (${sourceEvent}): limit=${limit}, offset=${offset}`,
+      );
       logger.debug(`[SIGNAL SERVER] User: ${sanitizeForLog(userId)}, Device: ${sanitizeForLog(deviceId)}`);
 
-      // Fetch messages with pagination
       const items = await Item.findAll({
         where: {
           receiver: userId,
-          deviceReceiver: deviceId
+          deviceReceiver: deviceId,
         },
         limit,
         offset,
-        order: [['createdAt', 'ASC']] // Oldest first (chronological order)
+        order: [['createdAt', 'ASC']],
       });
 
       const hasMore = items.length === limit;
+      const responseItems = items.map(item => ({
+        sender: item.sender,
+        senderDeviceId: item.deviceSender,
+        recipient: item.receiver,
+        type: item.type,
+        payload: item.payload,
+        cipherType: item.cipherType,
+        itemId: item.itemId,
+      }));
 
       logger.info(`[SIGNAL SERVER] Found ${items.length} pending messages (hasMore: ${hasMore})`);
 
-      // Send response
       socket.emit("pendingMessagesResponse", {
-        items: items.map(item => ({
-          sender: item.sender,
-          senderDeviceId: item.deviceSender,
-          recipient: item.receiver,
-          type: item.type,
-          payload: item.payload,
-          cipherType: item.cipherType,
-          itemId: item.itemId
-        })),
+        items: responseItems,
+        messages: responseItems,
         hasMore,
         offset,
-        total: items.length
+        total: items.length,
       });
-
     } catch (error) {
       logger.error('[SIGNAL SERVER] Error fetching pending messages', error);
       socket.emit("fetchPendingMessagesError", { error: error.message });
     }
+  };
+
+  socket.on("fetchPendingMessages", async (data) => {
+    await fetchPendingMessages(data, 'fetchPendingMessages');
+  });
+
+  socket.on("requestPendingMessages", async (data) => {
+    await fetchPendingMessages(data, 'requestPendingMessages');
   });
 
   // SIGNAL HANDLE START
