@@ -30,6 +30,10 @@ const { initMeetingReminderJob } = require('./jobs/meetingReminders');
 const logger = require('./utils/logger');
 const { sendMessageNotification } = require('./services/push_notifications');
 const { deviceSockets, getDeviceSockets } = require('./utils/deviceSockets');
+const {
+  normalizePagination,
+  fetchPendingMessagesForDevice,
+} = require('./services/pendingMessagesService');
 
 // ==================== SECURITY: FORMAT STRING SANITIZATION ====================
 // Helper function to safely log user-controlled values
@@ -1047,49 +1051,34 @@ io.sockets.on("connection", socket => {
 
       const userId = getUserId();
       const deviceId = getDeviceId();
-      const rawLimit = data?.limit ?? data?.batchSize ?? 20;
-      const rawOffset = data?.offset ?? 0;
-      const limit = Number.isFinite(parseInt(rawLimit, 10))
-        ? parseInt(rawLimit, 10)
-        : 20;
-      const offset = Number.isFinite(parseInt(rawOffset, 10))
-        ? parseInt(rawOffset, 10)
-        : 0;
+      const { limit, offset } = normalizePagination({
+        rawLimit: data?.limit ?? data?.batchSize ?? 20,
+        rawOffset: data?.offset ?? 0,
+        defaultLimit: 20,
+      });
 
       logger.info(
         `[SIGNAL SERVER] Fetching pending messages (${sourceEvent}): limit=${limit}, offset=${offset}`,
       );
       logger.debug(`[SIGNAL SERVER] User: ${sanitizeForLog(userId)}, Device: ${sanitizeForLog(deviceId)}`);
 
-      const items = await Item.findAll({
-        where: {
-          receiver: userId,
-          deviceReceiver: deviceId,
-        },
+      const { responseItems, hasMore } = await fetchPendingMessagesForDevice({
+        userId,
+        deviceId,
         limit,
         offset,
-        order: [['createdAt', 'ASC']],
       });
 
-      const hasMore = items.length === limit;
-      const responseItems = items.map(item => ({
-        sender: item.sender,
-        senderDeviceId: item.deviceSender,
-        recipient: item.receiver,
-        type: item.type,
-        payload: item.payload,
-        cipherType: item.cipherType,
-        itemId: item.itemId,
-      }));
-
-      logger.info(`[SIGNAL SERVER] Found ${items.length} pending messages (hasMore: ${hasMore})`);
+      logger.info(
+        `[SIGNAL SERVER] Found ${responseItems.length} pending messages (hasMore: ${hasMore})`,
+      );
 
       socket.emit("pendingMessagesResponse", {
         items: responseItems,
         messages: responseItems,
         hasMore,
         offset,
-        total: items.length,
+        total: responseItems.length,
       });
     } catch (error) {
       logger.error('[SIGNAL SERVER] Error fetching pending messages', error);

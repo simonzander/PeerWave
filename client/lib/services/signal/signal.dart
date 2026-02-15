@@ -46,6 +46,7 @@ import 'core/offline_queue_processor.dart';
 
 // Listener registry
 import 'listeners/listener_registry.dart';
+import 'listeners/sync_listeners.dart';
 
 // Callback management
 import 'callbacks/callback_manager.dart';
@@ -225,6 +226,8 @@ class SignalClient {
     );
     debugPrint('[SIGNAL_CLIENT] ✓ Listeners registered & clientReady sent');
 
+    await SyncListeners.fetchPendingMessagesViaHttp(reason: 'signal_init');
+
     // Start daily verification timer (runs every 24 hours)
     _startDailyVerificationTimer();
 
@@ -309,6 +312,18 @@ class SignalClient {
   }
 
   bool get isInitialized => _initialized;
+
+  /// Fetch pending messages via HTTP (used on app resume)
+  Future<void> fetchPendingMessagesViaHttp({required String reason}) async {
+    if (!_initialized) {
+      debugPrint(
+        '[SIGNAL_CLIENT] ⚠️ Pending fetch skipped - client not initialized',
+      );
+      return;
+    }
+
+    await SyncListeners.fetchPendingMessagesViaHttp(reason: reason);
+  }
 
   // ============================================================================
   // CALLBACK REGISTRATION METHODS (Convenience wrappers)

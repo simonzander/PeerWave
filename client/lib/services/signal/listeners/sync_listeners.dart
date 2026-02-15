@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../../socket_service.dart'
     if (dart.library.io) '../../socket_service_native.dart';
+import '../../api_service.dart';
 // import '../state/sync_state.dart'; // FIXME: SyncState removed
 import '../core/messaging/messaging_service.dart';
 import '../core/healing_service.dart';
@@ -243,5 +244,58 @@ class SyncListeners {
     required int offset,
   }) {
     socket.emit('fetchPendingMessages', {'limit': limit, 'offset': offset});
+  }
+
+  /// Fetch pending messages via HTTP (useful on init/resume)
+  static Future<void> fetchPendingMessagesViaHttp({
+    required String reason,
+    int limit = 50,
+  }) async {
+    if (_messagingService == null) {
+      debugPrint('[SYNC_LISTENERS] HTTP fetch skipped - no messaging service');
+      return;
+    }
+
+    try {
+      debugPrint('[SYNC_LISTENERS] HTTP pending fetch started: $reason');
+
+      var offset = 0;
+      var hasMore = true;
+
+      while (hasMore) {
+        final response = await ApiService.instance.get(
+          '/api/signal/pending-messages',
+          queryParameters: {'limit': limit, 'offset': offset, 'source': reason},
+        );
+
+        final raw = response.data;
+        final data = raw is Map
+            ? Map<String, dynamic>.from(raw as Map)
+            : <String, dynamic>{};
+
+        final items =
+            (data['items'] as List?) ?? (data['messages'] as List?) ?? [];
+        hasMore = data['hasMore'] as bool? ?? false;
+
+        debugPrint(
+          '[SYNC_LISTENERS] HTTP received ${items.length} messages, hasMore: $hasMore',
+        );
+
+        for (final message in items) {
+          await _processPendingMessage(message);
+        }
+
+        if (items.isEmpty) {
+          hasMore = false;
+        } else {
+          offset += items.length;
+        }
+      }
+
+      debugPrint('[SYNC_LISTENERS] HTTP pending fetch complete');
+    } catch (e, stack) {
+      debugPrint('[SYNC_LISTENERS] HTTP pending fetch error: $e');
+      debugPrint('[SYNC_LISTENERS] Stack: $stack');
+    }
   }
 }
