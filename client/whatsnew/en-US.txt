@@ -1,8 +1,8 @@
-🚀 What's New in PeerWave v1.4.1
+🚀 What's New in PeerWave v1.4.4
 
 ✨ New Features
-• Implement Picture-in-Picture (PiP) support for video calls
-• Enhance server configuration and session management
-• Enhance video conference features and improve participant management
-• Implement persistent session and signed pre-key stores
+• chore: update version to 1.4.3 implement pending messages fetching via http fix: auto scroll to bottom in messages
+
+🐛 Bug Fixes
+• chore: update version to 1.4.3 feat: implement pending messages fetching via http auto scroll to bottom in messages
 
