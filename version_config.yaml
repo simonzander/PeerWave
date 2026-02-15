@@ -17,7 +17,7 @@ client:
 
 server:
   # Semantic versioning: MAJOR.MINOR.PATCH
-  version: "1.4.2"
+  version: "1.4.3"
   
   # Client compatibility range
   min_client_version: "1.4.0"
