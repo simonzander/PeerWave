@@ -73,6 +73,35 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   bool _isBlocked = false;
   String? _blockDirection; // 'you_blocked' or 'they_blocked'
 
+  void _scrollToBottom({required bool force}) {
+    if (!mounted) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients || !mounted) return;
+      if (!force) {
+        final maxScroll = _scrollController.position.maxScrollExtent;
+        final currentScroll = _scrollController.position.pixels;
+        const threshold = 200.0;
+        if (maxScroll - currentScroll > threshold) {
+          return;
+        }
+      }
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  bool _isNearBottom() {
+    if (!mounted || !_scrollController.hasClients) return false;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final currentScroll = _scrollController.position.pixels;
+    const threshold = 200.0;
+    return maxScroll - currentScroll <= threshold;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -613,6 +642,8 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         'originalRecipient': item['originalRecipient'],
     };
 
+    final shouldScroll = _isNearBottom();
+
     // Add message to UI
     setState(() {
       _messages.add(newMessage);
@@ -633,16 +664,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       }
     }
 
-    // Auto-scroll to new message
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients && mounted) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
+    _scrollToBottom(force: isOwnMessage || shouldScroll);
 
     // Send read receipt if this is a received message (not our own)
     if (!isOwnMessage) {
@@ -1003,18 +1025,7 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
         });
       });
 
-      // Auto-scroll to new sent message - wait for multiple frames
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        SchedulerBinding.instance.addPostFrameCallback((_) {
-          if (_scrollController.hasClients && mounted) {
-            _scrollController.animateTo(
-              _scrollController.position.maxScrollExtent,
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOut,
-            );
-          }
-        });
-      });
+      _scrollToBottom(force: true);
     }
 
     // Check connection

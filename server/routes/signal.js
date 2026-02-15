@@ -1,9 +1,13 @@
 const express = require('express');
-const { SignalSignedPreKey, SignalPreKey, SignalIdentity, Client, Item } = require('../db/model');
+const { SignalSignedPreKey, SignalPreKey, SignalIdentity, Client } = require('../db/model');
 const { verifyAuthEither } = require('../middleware/sessionAuth');
 const logger = require('../utils/logger');
 const writeQueue = require('../db/writeQueue');
 const { getDeviceSockets } = require('../utils/deviceSockets');
+const {
+  normalizePagination,
+  fetchPendingMessagesForDevice,
+} = require('../services/pendingMessagesService');
 
 const router = express.Router();
 
@@ -132,6 +136,63 @@ router.get('/signed-prekeys', verifyAuthEither, async (req, res) => {
   } catch (error) {
     logger.error('Error fetching signed pre-keys:', error);
     res.status(500).json({ error: 'Failed to fetch signed pre-keys' });
+  }
+});
+
+/**
+ * GET /api/signal/pending-messages
+ * Fetch pending Signal messages for the current user/device
+ */
+router.get('/pending-messages', verifyAuthEither, async (req, res) => {
+  try {
+    const userId = req.userId;
+    const clientId = req.clientId;
+
+    if (!userId || !clientId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { limit, offset } = normalizePagination({
+      rawLimit: req.query.limit ?? req.query.batchSize ?? 20,
+      rawOffset: req.query.offset ?? 0,
+      defaultLimit: 20,
+    });
+    const source = req.query.source ?? 'http';
+
+    const client = await Client.findOne({
+      where: { clientid: clientId },
+      attributes: ['device_id'],
+    });
+
+    if (!client?.device_id) {
+      logger.warn('[SIGNAL API] Missing device_id for pending messages');
+      return res.status(400).json({ error: 'Missing device id' });
+    }
+
+    const deviceId = client.device_id;
+
+    logger.info(
+      `[SIGNAL API] Fetching pending messages (${source}): limit=${limit}, offset=${offset}`,
+    );
+
+    const { responseItems, hasMore } = await fetchPendingMessagesForDevice({
+      userId,
+      deviceId,
+      limit,
+      offset,
+    });
+
+    return res.json({
+      success: true,
+      items: responseItems,
+      messages: responseItems,
+      hasMore,
+      offset,
+      total: responseItems.length,
+    });
+  } catch (error) {
+    logger.error('[SIGNAL API] Error fetching pending messages', error);
+    return res.status(500).json({ error: 'Failed to fetch pending messages' });
   }
 });
 

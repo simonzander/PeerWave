@@ -72,6 +72,35 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
   Map<String, dynamic>? _channelData;
   bool _isOwner = false;
 
+  void _scrollToBottom({required bool force}) {
+    if (!mounted) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients || !mounted) return;
+      if (!force) {
+        final maxScroll = _scrollController.position.maxScrollExtent;
+        final currentScroll = _scrollController.position.pixels;
+        const threshold = 200.0;
+        if (maxScroll - currentScroll > threshold) {
+          return;
+        }
+      }
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  bool _isNearBottom() {
+    if (!mounted || !_scrollController.hasClients) return false;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final currentScroll = _scrollController.position.pixels;
+    const threshold = 200.0;
+    return maxScroll - currentScroll <= threshold;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -559,6 +588,8 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
       final currentUserId = UserProfileService.instance.currentUserUuid;
       final isOwnMessage = senderId == currentUserId;
 
+      final shouldScroll = _isNearBottom();
+
       // Add to UI
       setState(() {
         _messages.add({
@@ -589,6 +620,8 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
           return timeA.compareTo(timeB);
         });
       });
+
+      _scrollToBottom(force: isOwnMessage || shouldScroll);
 
       debugPrint('[SIGNAL_GROUP] Message added to UI');
 
@@ -923,6 +956,8 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
           'totalCount': 0,
         });
       });
+
+      _scrollToBottom(force: true);
 
       // CRITICAL: Check socket connection before sending
       if (!SocketService.instance.isConnected) {

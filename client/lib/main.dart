@@ -567,6 +567,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       }
 
       await _retryPendingSenderKeys();
+      await _fetchPendingMessagesOnResume();
     } catch (e) {
       debugPrint('[LIFECYCLE] ❌ Failed to reconnect servers: $e');
       // Don't throw - allow app to continue functioning
@@ -586,6 +587,21 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       await signalClient.messagingService.retryPendingSenderKeyRequests();
     } catch (e) {
       debugPrint('[LIFECYCLE] Failed to retry sender key requests: $e');
+    }
+  }
+
+  Future<void> _fetchPendingMessagesOnResume() async {
+    try {
+      if (!ServerSettingsService.instance.isSignalClientInitialized()) {
+        return;
+      }
+
+      final signalClient = ServerSettingsService.instance.getSignalClient();
+      if (signalClient == null) return;
+
+      await signalClient.fetchPendingMessagesViaHttp(reason: 'app_resumed');
+    } catch (e) {
+      debugPrint('[LIFECYCLE] Failed to fetch pending messages: $e');
     }
   }
 
