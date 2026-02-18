@@ -1,11 +1,6 @@
 name: Release Build & Publish
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'version_config.yaml'
   repository_dispatch:
     types: [version-bumped]
   workflow_dispatch:
