@@ -36,7 +36,7 @@
     "p-queue": "^9.1.0",
     "passport": "^0.7.0",
     "pug": "^3.0.3",
-    "sanitize-html": "^2.13.0",
+    "sanitize-html": "^2.17.1",
     "sequelize": "^6.37.7",
     "socket.io": "^4.6.1",
     "socket.io-express-session": "^0.1.2",
