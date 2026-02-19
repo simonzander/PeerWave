@@ -445,6 +445,9 @@ mixin MessageReceivingMixin {
       // The server will re-deliver it via socket when we come online
       // The 'receiveSenderKeyDistribution' socket listener will handle it
       // We just mark it as processed here to clear from queue
+    } else if (type == 'call_notification') {
+      debugPrint('[RECEIVE] Call notification received - triggering callbacks');
+      await triggerCallbacks(type, data, message);
     } else if (type == 'meeting_e2ee_key_request' ||
         type == 'meeting_e2ee_key_response') {
       // E2EE key exchange messages need to emit EventBus events

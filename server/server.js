@@ -3189,7 +3189,7 @@ io.sockets.on("connection", socket => {
         
         // Check if user is creator, participant, invited, or the source_user (person being called in 1:1)
         const isCreator = meeting.created_by === userId;
-        const isParticipant = meeting.participants && meeting.participants.some(p => p.uuid === userId);
+        const isParticipant = meeting.participants && meeting.participants.some(p => p.user_id === userId);
         const isInvited = meeting.invited_participants && meeting.invited_participants.includes(userId);
         const isSourceUser = meeting.source_user_id === userId; // Person being called in 1:1 instant call
         
@@ -3302,8 +3302,9 @@ io.sockets.on("connection", socket => {
 
         // Check if user is participant
         const isParticipant = meeting.created_by === userId ||
-                             meeting.participants?.some(p => p.user_id === userId) ||
-                             meeting.invited_participants?.includes(userId);
+                 meeting.participants?.some(p => p.user_id === userId) ||
+                 meeting.invited_participants?.includes(userId) ||
+                 meeting.source_user_id === userId;
 
         if (!isParticipant) {
           logger.error('[VIDEO PARTICIPANTS] User not participant of meeting');
@@ -4091,7 +4092,7 @@ io.sockets.on("connection", socket => {
             callerName: callerName,
             meetingId: meeting_id,
             callType: meeting.is_instant_call ? 'instant' : 'scheduled',
-            channelId: meeting.channel_id || null,
+            channelId: meeting.source_channel_id || meeting.channel_id || null,
             channelName: meeting.title || 'Call',
             timestamp: new Date().toISOString(),
           };
