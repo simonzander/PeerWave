@@ -144,6 +144,9 @@ class UnreadMessagesProvider extends ChangeNotifier {
     }
 
     final type = data['type'] as String? ?? 'message';
+    final syncSource = data['_syncSource'] ?? data['syncSource'];
+    final isOfflineSync =
+        syncSource == 'offline_http' || syncSource == 'offline_socket';
 
     final currentUserId = UserProfileService.instance.currentUserUuid;
     final senderId = (data['senderId'] ?? data['sender'])?.toString();
@@ -155,9 +158,10 @@ class UnreadMessagesProvider extends ChangeNotifier {
 
     final channelId = (data['channelId'] ?? data['channel'])?.toString();
     if (channelId != null && channelId.isNotEmpty) {
-      if (ActiveConversationService.instance.shouldSuppressGroupNotification(
-        channelId,
-      )) {
+      if (!isOfflineSync &&
+          ActiveConversationService.instance.shouldSuppressGroupNotification(
+            channelId,
+          )) {
         debugPrint(
           '[UnreadProvider] Skipping unread increment for active channel $channelId',
         );
@@ -168,8 +172,9 @@ class UnreadMessagesProvider extends ChangeNotifier {
     }
 
     if (senderId != null && senderId.isNotEmpty) {
-      if (ActiveConversationService.instance
-          .shouldSuppressDirectMessageNotification(senderId)) {
+      if (!isOfflineSync &&
+          ActiveConversationService.instance
+              .shouldSuppressDirectMessageNotification(senderId)) {
         debugPrint(
           '[UnreadProvider] Skipping unread increment for active DM $senderId',
         );

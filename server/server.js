@@ -33,6 +33,7 @@ const { deviceSockets, getDeviceSockets } = require('./utils/deviceSockets');
 const {
   normalizePagination,
   fetchPendingMessagesForDevice,
+  fetchPendingMessagesForDeviceV2,
 } = require('./services/pendingMessagesService');
 
 // ==================== SECURITY: FORMAT STRING SANITIZATION ====================
@@ -1086,12 +1087,65 @@ io.sockets.on("connection", socket => {
     }
   };
 
+  const fetchPendingMessagesV2 = async (data, sourceEvent) => {
+    try {
+      if (!isAuthenticated()) {
+        logger.error(`[SIGNAL SERVER] ${sourceEvent} blocked - not authenticated`);
+        socket.emit("fetchPendingMessagesError", { error: 'Not authenticated' });
+        return;
+      }
+
+      const userId = getUserId();
+      const deviceId = getDeviceId();
+      const { limit, offset } = normalizePagination({
+        rawLimit: data?.limit ?? data?.batchSize ?? 20,
+        rawOffset: data?.offset ?? 0,
+        defaultLimit: 20,
+      });
+
+      logger.info(
+        `[SIGNAL SERVER] Fetching pending messages v2 (${sourceEvent}): limit=${limit}, offset=${offset}`,
+      );
+      logger.debug(`[SIGNAL SERVER] User: ${sanitizeForLog(userId)}, Device: ${sanitizeForLog(deviceId)}`);
+
+      const { responseItems, hasMore } = await fetchPendingMessagesForDeviceV2({
+        userId,
+        deviceId,
+        limit,
+        offset,
+      });
+
+      logger.info(
+        `[SIGNAL SERVER] Found ${responseItems.length} pending messages v2 (hasMore: ${hasMore})`,
+      );
+
+      socket.emit("pendingMessagesResponse", {
+        items: responseItems,
+        messages: responseItems,
+        hasMore,
+        offset,
+        total: responseItems.length,
+      });
+    } catch (error) {
+      logger.error('[SIGNAL SERVER] Error fetching pending messages v2', error);
+      socket.emit("fetchPendingMessagesError", { error: error.message });
+    }
+  };
+
   socket.on("fetchPendingMessages", async (data) => {
     await fetchPendingMessages(data, 'fetchPendingMessages');
   });
 
   socket.on("requestPendingMessages", async (data) => {
     await fetchPendingMessages(data, 'requestPendingMessages');
+  });
+
+  socket.on("fetchPendingMessagesV2", async (data) => {
+    await fetchPendingMessagesV2(data, 'fetchPendingMessagesV2');
+  });
+
+  socket.on("requestPendingMessagesV2", async (data) => {
+    await fetchPendingMessagesV2(data, 'requestPendingMessagesV2');
   });
 
   // SIGNAL HANDLE START
