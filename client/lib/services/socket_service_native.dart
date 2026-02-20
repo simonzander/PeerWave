@@ -31,6 +31,7 @@ class SocketService {
   final Map<String, bool> _serverListenersRegistered = {};
   final Map<String, bool> _serverIsConnected = {};
   final Map<String, Completer<void>?> _serverConnectionCompleters = {};
+  final Map<String, bool> _serverAuthError = {};
 
   String? _activeServerId; // Which server is currently active in UI
 
@@ -93,6 +94,20 @@ class SocketService {
     }
 
     return result;
+  }
+
+  bool isServerConnected(String serverId) {
+    final socket = _sockets[serverId];
+    return (_serverIsConnected[serverId] ?? false) &&
+        (socket?.connected ?? false);
+  }
+
+  bool isServerConnecting(String serverId) {
+    return _serverConnecting[serverId] ?? false;
+  }
+
+  bool isServerAuthError(String serverId) {
+    return _serverAuthError[serverId] ?? false;
   }
 
   /// Connect to ALL configured servers (for background notifications)
@@ -210,6 +225,7 @@ class SocketService {
 
     _serverConnecting[serverId] = true;
     _serverConnectionCompleters[serverId] = Completer<void>();
+    _serverAuthError[serverId] = false;
 
     try {
       debugPrint(
@@ -245,10 +261,12 @@ class SocketService {
         _handleAuthenticated(serverId, data);
 
         if (data is Map && data['authenticated'] == true) {
+          _serverAuthError[serverId] = false;
           if (!(_serverConnectionCompleters[serverId]?.isCompleted ?? true)) {
             _serverConnectionCompleters[serverId]?.complete();
           }
         } else if (data is Map && data['authenticated'] == false) {
+          _serverAuthError[serverId] = true;
           if (!(_serverConnectionCompleters[serverId]?.isCompleted ?? true)) {
             _serverConnectionCompleters[serverId]?.completeError(
               'Authentication failed: ${data['error']}',
@@ -282,6 +300,7 @@ class SocketService {
       });
 
       socket.on('unauthorized', (_) {
+        _serverAuthError[serverId] = true;
         if (AuthService.isLoggedIn) {
           _socketUnauthorizedCallback?.call();
         }

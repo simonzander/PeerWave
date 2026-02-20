@@ -1006,6 +1006,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         final uri = Uri.parse(state.uri.toString());
         final fromParam = uri.queryParameters['from'];
         if (loggedIn) {
+          final initService = PostLoginInitService.instance;
           debugPrint('[ROUTER] ========================================');
           debugPrint(
             '[ROUTER] 🔐 User is logged in - checking post-login initialization',
@@ -1015,7 +1016,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             '[ROUTER] _postLoginInitComplete: $_postLoginInitComplete',
           );
           debugPrint(
-            '[ROUTER] PostLoginInitService.isInitialized: ${PostLoginInitService.instance.isInitialized}',
+            '[ROUTER] PostLoginInitService.isInitialized: ${initService.isInitialized}',
           );
           debugPrint('[ROUTER] ========================================');
 
@@ -1023,14 +1024,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           // CREATE SIGNALCLIENT AFTER AUTHENTICATION
           // ========================================
           // After successful auth, create SignalClient for active server
-          if (!_postLoginInitComplete && location != '/signal-setup') {
+          if (!initService.isInitialized && location != '/signal-setup') {
             debugPrint(
               '[ROUTER] 🔄 Creating SignalClient for active server...',
             );
 
             // CRITICAL: Initialize ApiService and SocketService FIRST
             // This must happen before we try to initialize SignalClient or redirect to signal-setup
-            if (!PostLoginInitService.instance.isInitialized) {
+            if (!initService.isInitializing && !initService.isInitialized) {
               debugPrint(
                 '[ROUTER] 🔧 Initializing ApiService and SocketService first...',
               );
@@ -1061,43 +1062,86 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                   serverUrl = 'https://$serverUrl';
                 }
 
-                await PostLoginInitService.instance.initialize(
-                  serverUrl: serverUrl,
-                  unreadProvider: unreadProvider,
-                  roleProvider: roleProvider,
-                  statsProvider: statsProvider,
-                  onProgress: (step, current, total) {
-                    debugPrint('[MAIN] [$current/$total] $step');
-                  },
-                );
+                if (kIsWeb) {
+                  await initService.initialize(
+                    serverUrl: serverUrl,
+                    unreadProvider: unreadProvider,
+                    roleProvider: roleProvider,
+                    statsProvider: statsProvider,
+                    onProgress: (step, current, total) {
+                      debugPrint('[MAIN] [$current/$total] $step');
+                    },
+                  );
 
-                _postLoginInitComplete = true;
+                  _postLoginInitComplete = true;
 
-                // Trigger rebuild to update providers with initialized services
-                if (mounted) {
-                  setState(() {});
+                  // Trigger rebuild to update providers with initialized services
+                  if (mounted) {
+                    setState(() {});
+                  }
+
+                  debugPrint(
+                    '[ROUTER] ✅ ApiService and SocketService initialized (web)',
+                  );
+                } else {
+                  unawaited(
+                    initService
+                        .initialize(
+                          serverUrl: serverUrl,
+                          unreadProvider: unreadProvider,
+                          roleProvider: roleProvider,
+                          statsProvider: statsProvider,
+                          onProgress: (step, current, total) {
+                            debugPrint('[MAIN] [$current/$total] $step');
+                          },
+                        )
+                        .then((_) {
+                          _postLoginInitComplete = true;
+
+                          // Trigger rebuild to update providers with initialized services
+                          if (mounted) {
+                            setState(() {});
+                          }
+
+                          debugPrint(
+                            '[ROUTER] ✅ ApiService and SocketService initialized (native, async)',
+                          );
+                        })
+                        .catchError((e) {
+                          debugPrint(
+                            '[ROUTER] ⚠️ Post-login initialization failed (native): $e',
+                          );
+                        }),
+                  );
                 }
-
-                debugPrint(
-                  '[ROUTER] ✅ ApiService and SocketService initialized',
-                );
               } catch (e) {
                 debugPrint('[ROUTER] ❌ Error during initialization: $e');
                 // On error, redirect to login to be safe
                 return '/login';
               }
+            } else if (initService.isInitializing) {
+              debugPrint(
+                '[ROUTER] ⏳ Post-login initialization already in progress',
+              );
             }
 
-            try {
-              // Check if SignalClient already exists and is initialized
-              if (!ServerSettingsService.instance.isSignalClientInitialized()) {
-                debugPrint('[ROUTER] 📡 SignalClient not initialized');
-                debugPrint('[ROUTER] ↪️ Redirecting to /signal-setup');
-                return '/signal-setup';
+            if (!kIsWeb && !initService.isInitialized) {
+              debugPrint(
+                '[ROUTER] ⏳ Post-login init pending - skipping signal setup redirect (native)',
+              );
+            } else {
+              try {
+                // Check if SignalClient already exists and is initialized
+                if (!ServerSettingsService.instance
+                    .isSignalClientInitialized()) {
+                  debugPrint('[ROUTER] 📡 SignalClient not initialized');
+                  debugPrint('[ROUTER] ↪️ Redirecting to /signal-setup');
+                  return '/signal-setup';
+                }
+              } catch (e) {
+                debugPrint('[ROUTER] ❌ Error checking SignalClient: $e');
+                // Continue without blocking - will show error in setup screen
               }
-            } catch (e) {
-              debugPrint('[ROUTER] ❌ Error checking SignalClient: $e');
-              // Continue without blocking - will show error in setup screen
             }
           }
 
@@ -1124,34 +1168,40 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             if (location == '/app' ||
                 location == '/' ||
                 location.startsWith('/app/')) {
-              debugPrint(
-                '[ROUTER] App route detected - checking SignalClient initialization...',
-              );
+              if (!kIsWeb && !initService.isInitialized) {
+                debugPrint(
+                  '[ROUTER] ⏳ Post-login init pending - skipping SignalClient check (native)',
+                );
+              } else {
+                debugPrint(
+                  '[ROUTER] App route detected - checking SignalClient initialization...',
+                );
 
-              try {
-                if (!ServerSettingsService.instance
-                    .isSignalClientInitialized()) {
-                  debugPrint(
-                    '[ROUTER] SignalClient not initialized - redirecting to /signal-setup',
-                  );
-
-                  // Save current route for restoration after setup
-                  if (location.startsWith('/app/') &&
-                      location != '/app/' &&
-                      location.length > 5) {
+                try {
+                  if (!ServerSettingsService.instance
+                      .isSignalClientInitialized()) {
                     debugPrint(
-                      '[MAIN] Saving current route before signal-setup: $location',
+                      '[ROUTER] SignalClient not initialized - redirecting to /signal-setup',
                     );
-                    await PreferencesService().saveLastRoute(location);
+
+                    // Save current route for restoration after setup
+                    if (location.startsWith('/app/') &&
+                        location != '/app/' &&
+                        location.length > 5) {
+                      debugPrint(
+                        '[MAIN] Saving current route before signal-setup: $location',
+                      );
+                      await PreferencesService().saveLastRoute(location);
+                    }
+
+                    return '/signal-setup';
                   }
 
-                  return '/signal-setup';
+                  debugPrint('[ROUTER] ✅ SignalClient initialized');
+                } catch (e) {
+                  debugPrint('[ROUTER] ❌ Error checking SignalClient: $e');
+                  // Continue - will be caught in setup screen
                 }
-
-                debugPrint('[ROUTER] ✅ SignalClient initialized');
-              } catch (e) {
-                debugPrint('[ROUTER] ❌ Error checking SignalClient: $e');
-                // Continue - will be caught in setup screen
               }
             }
           }

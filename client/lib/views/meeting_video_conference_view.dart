@@ -26,6 +26,11 @@ class MeetingVideoConferenceView extends StatefulWidget {
   final String meetingTitle;
   final lk.MediaDevice? selectedCamera;
   final lk.MediaDevice? selectedMicrophone;
+  final bool isInstantCall;
+  final bool isInitiator;
+  final String? sourceChannelId;
+  final String? sourceUserId;
+  final List<String>? invitedUserIds;
 
   const MeetingVideoConferenceView({
     super.key,
@@ -33,6 +38,11 @@ class MeetingVideoConferenceView extends StatefulWidget {
     required this.meetingTitle,
     this.selectedCamera,
     this.selectedMicrophone,
+    this.isInstantCall = false,
+    this.isInitiator = false,
+    this.sourceChannelId,
+    this.sourceUserId,
+    this.invitedUserIds,
   });
 
   @override
@@ -72,6 +82,10 @@ class _MeetingVideoConferenceViewState
   @override
   void initState() {
     super.initState();
+
+    if (widget.invitedUserIds != null) {
+      _invitedUserIds.addAll(widget.invitedUserIds!);
+    }
 
     // Start periodic visibility updates
     _visibilityUpdateTimer = Timer.periodic(
@@ -274,6 +288,47 @@ class _MeetingVideoConferenceViewState
 
       // Enter full-view mode
       _service!.enterFullView();
+
+      final isInstantCall =
+          widget.isInstantCall || widget.meetingId.startsWith('call_');
+      if (isInstantCall && widget.isInitiator) {
+        final callService = CallService();
+
+        if (widget.sourceUserId != null) {
+          callService.notifyRecipients(widget.meetingId, [
+            widget.sourceUserId!,
+          ]);
+          if (mounted) {
+            setState(() {
+              _invitedUserIds.add(widget.sourceUserId!);
+            });
+          } else {
+            _invitedUserIds.add(widget.sourceUserId!);
+          }
+        } else if (widget.sourceChannelId != null) {
+          try {
+            final invited = await callService.notifyChannelMembers(
+              meetingId: widget.meetingId,
+              channelId: widget.sourceChannelId!,
+            );
+            if (mounted) {
+              setState(() {
+                _invitedUserIds.addAll(invited);
+              });
+            } else {
+              _invitedUserIds.addAll(invited);
+            }
+          } catch (e) {
+            debugPrint('[MeetingVideo] Failed to notify channel members: $e');
+          }
+        } else if (widget.invitedUserIds != null &&
+            widget.invitedUserIds!.isNotEmpty) {
+          callService.notifyRecipients(
+            widget.meetingId,
+            widget.invitedUserIds!,
+          );
+        }
+      }
     } catch (e) {
       debugPrint('[MeetingVideo] Join error: $e');
       setState(() {

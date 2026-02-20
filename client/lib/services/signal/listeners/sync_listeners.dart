@@ -195,6 +195,8 @@ class SyncListeners {
   static Future<void> _processPendingMessage(dynamic message) async {
     try {
       final dataMap = Map<String, dynamic>.from(message as Map);
+      dataMap['_syncSource'] =
+          dataMap['_syncSource'] ?? dataMap['syncSource'] ?? 'offline_socket';
       final channelId = dataMap['channelId'] as String?;
       final itemId = dataMap['itemId'] as String?;
 
@@ -243,7 +245,7 @@ class SyncListeners {
     required int limit,
     required int offset,
   }) {
-    socket.emit('fetchPendingMessages', {'limit': limit, 'offset': offset});
+    socket.emit('fetchPendingMessagesV2', {'limit': limit, 'offset': offset});
   }
 
   /// Fetch pending messages via HTTP (useful on init/resume)
@@ -264,7 +266,7 @@ class SyncListeners {
 
       while (hasMore) {
         final response = await ApiService.instance.get(
-          '/api/signal/pending-messages',
+          '/api/signal/pending-messages/v2',
           queryParameters: {'limit': limit, 'offset': offset, 'source': reason},
         );
 

@@ -11,6 +11,7 @@ import '../screens/dashboard/channels_list_view.dart';
 import '../screens/people/people_screen.dart';
 import '../views/video_conference_prejoin_view.dart';
 import '../views/video_conference_view.dart';
+import '../views/meeting_video_conference_view.dart';
 import '../services/api_service.dart';
 import '../services/activities_service.dart';
 import '../services/user_profile_service.dart';
@@ -895,9 +896,30 @@ class _DashboardPageState extends State<DashboardPage> {
           } else if (_activeChannelType == 'webrtc') {
             // Show WebRTC video conference
             if (_videoConferenceConfig != null) {
+              final channelId = _videoConferenceConfig!['channelId'] as String;
+              final channelName =
+                  _videoConferenceConfig!['channelName'] as String;
+
+              if (channelId.startsWith('call_')) {
+                return MeetingVideoConferenceView(
+                  meetingId: channelId,
+                  meetingTitle: channelName,
+                  selectedCamera: _videoConferenceConfig!['selectedCamera'],
+                  selectedMicrophone:
+                      _videoConferenceConfig!['selectedMicrophone'],
+                  isInstantCall:
+                      _videoConferenceConfig!['isInstantCall'] == true,
+                  isInitiator: _videoConferenceConfig!['isInitiator'] == true,
+                  sourceUserId:
+                      _videoConferenceConfig!['sourceUserId'] as String?,
+                  sourceChannelId:
+                      _videoConferenceConfig!['sourceChannelId'] as String?,
+                );
+              }
+
               return VideoConferenceView(
-                channelId: _videoConferenceConfig!['channelId'],
-                channelName: _videoConferenceConfig!['channelName'],
+                channelId: channelId,
+                channelName: channelName,
                 selectedCamera: _videoConferenceConfig!['selectedCamera'],
                 selectedMicrophone:
                     _videoConferenceConfig!['selectedMicrophone'],
@@ -945,9 +967,30 @@ class _DashboardPageState extends State<DashboardPage> {
           } else if (_activeChannelType == 'webrtc') {
             // WebRTC channel - show PreJoin screen or VideoConferenceView
             if (_videoConferenceConfig != null) {
+              final channelId = _videoConferenceConfig!['channelId'] as String;
+              final channelName =
+                  _videoConferenceConfig!['channelName'] as String;
+
+              if (channelId.startsWith('call_')) {
+                return MeetingVideoConferenceView(
+                  meetingId: channelId,
+                  meetingTitle: channelName,
+                  selectedCamera: _videoConferenceConfig!['selectedCamera'],
+                  selectedMicrophone:
+                      _videoConferenceConfig!['selectedMicrophone'],
+                  isInstantCall:
+                      _videoConferenceConfig!['isInstantCall'] == true,
+                  isInitiator: _videoConferenceConfig!['isInitiator'] == true,
+                  sourceUserId:
+                      _videoConferenceConfig!['sourceUserId'] as String?,
+                  sourceChannelId:
+                      _videoConferenceConfig!['sourceChannelId'] as String?,
+                );
+              }
+
               return VideoConferenceView(
-                channelId: _videoConferenceConfig!['channelId'],
-                channelName: _videoConferenceConfig!['channelName'],
+                channelId: channelId,
+                channelName: channelName,
                 selectedCamera: _videoConferenceConfig!['selectedCamera'],
                 selectedMicrophone:
                     _videoConferenceConfig!['selectedMicrophone'],

@@ -191,7 +191,7 @@ router.post('/meeting-token', verifyAuthEither, async (req, res) => {
 
     // Check if user is creator, participant, invited, or source_user (for instant calls)
     const isOwner = meeting.created_by === userId;
-    const isParticipant = meeting.participants && meeting.participants.some(p => p.uuid === userId);
+    const isParticipant = meeting.participants && meeting.participants.some(p => p.user_id === userId);
     const isInvited = meeting.invited_participants && meeting.invited_participants.includes(userId);
     const isSourceUser = meeting.source_user_id === userId; // For instant calls (recipient)
 

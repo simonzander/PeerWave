@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:uuid/uuid.dart';
@@ -21,15 +22,18 @@ import '../../services/file_transfer/socket_file_client.dart';
 import '../../services/event_bus.dart';
 import '../../services/active_conversation_service.dart';
 import '../../models/file_message.dart';
+import '../../models/user_presence.dart';
 import '../../extensions/snackbar_extensions.dart';
 import '../../providers/unread_messages_provider.dart';
 import '../../views/video_conference_prejoin_view.dart';
 import '../../views/video_conference_view.dart';
+import '../../views/meeting_video_conference_view.dart';
 import '../../widgets/animated_widgets.dart';
 import '../../services/api_service.dart';
 import '../../services/server_settings_service.dart';
 import '../../services/device_identity_service.dart';
 import '../../services/user_profile_service.dart';
+import '../../services/presence_service.dart';
 import '../report_abuse_screen.dart';
 
 /// Whitelist of message types that should be displayed in UI
@@ -73,6 +77,12 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
   bool _isBlocked = false;
   String? _blockDirection; // 'you_blocked' or 'they_blocked'
 
+  final PresenceService _presenceService = PresenceService();
+  StreamSubscription<UserPresence>? _presenceSub;
+  StreamSubscription<String>? _presenceConnectedSub;
+  StreamSubscription<String>? _presenceDisconnectedSub;
+  String? _presenceStatus;
+
   void _scrollToBottom({required bool force}) {
     if (!mounted) return;
 
@@ -113,11 +123,33 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
 
     _initialize();
     _checkBlockStatus();
+    _presenceService.initialize();
+    _refreshPresenceStatus();
+    _presenceSub = _presenceService.onPresenceUpdate.listen((presence) {
+      if (presence.userId == widget.recipientUuid) {
+        _updatePresenceFromCache();
+      }
+    });
+    _presenceConnectedSub = _presenceService.onUserConnected.listen((userId) {
+      if (userId == widget.recipientUuid) {
+        _updatePresenceFromCache();
+      }
+    });
+    _presenceDisconnectedSub = _presenceService.onUserDisconnected.listen((
+      userId,
+    ) {
+      if (userId == widget.recipientUuid) {
+        _updatePresenceFromCache();
+      }
+    });
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
+    _presenceSub?.cancel();
+    _presenceConnectedSub?.cancel();
+    _presenceDisconnectedSub?.cancel();
 
     // Clear active conversation to re-enable notifications
     ActiveConversationService.instance.clearActiveConversation();
@@ -159,7 +191,70 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
       }
 
       _initialize(); // Reload
+      _presenceStatus = null;
+      _refreshPresenceStatus();
     }
+  }
+
+  Future<void> _refreshPresenceStatus() async {
+    try {
+      final statusMap = await _presenceService.checkOnlineStatus([
+        widget.recipientUuid,
+      ]);
+      final status =
+          statusMap[widget.recipientUuid] ??
+          UserProfileService.instance.getPresenceStatus(widget.recipientUuid) ??
+          'offline';
+      if (mounted) {
+        setState(() {
+          _presenceStatus = status;
+        });
+      }
+    } catch (e) {
+      debugPrint('[DM_SCREEN] Presence refresh error: $e');
+    }
+  }
+
+  void _updatePresenceFromCache() {
+    final status =
+        UserProfileService.instance.getPresenceStatus(widget.recipientUuid) ??
+        'offline';
+    if (!mounted || _presenceStatus == status) return;
+    setState(() {
+      _presenceStatus = status;
+    });
+  }
+
+  Widget _buildPresenceIndicator(ColorScheme colorScheme) {
+    final status =
+        _presenceStatus ??
+        UserProfileService.instance.getPresenceStatus(widget.recipientUuid);
+    if (status != 'online' && status != 'busy') {
+      return const SizedBox.shrink();
+    }
+
+    final label = status == 'busy' ? 'Busy' : 'Online';
+    final color = status == 'busy' ? colorScheme.tertiary : colorScheme.primary;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            color: colorScheme.onSurface.withValues(alpha: 0.7),
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
   }
 
   /// Initialize the direct messages screen
@@ -1155,6 +1250,8 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
             ),
             const SizedBox(width: 12),
             Text(widget.recipientDisplayName),
+            const SizedBox(width: 8),
+            _buildPresenceIndicator(colorScheme),
           ],
         ),
         backgroundColor: colorScheme.surfaceContainerHighest,
@@ -1203,6 +1300,26 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
               if (result != null &&
                   result is Map &&
                   result['hasE2EEKey'] == true) {
+                final meetingId = result['channelId'] as String?;
+                final meetingTitle = result['channelName'] as String?;
+                if (meetingId != null && meetingId.startsWith('call_')) {
+                  Navigator.push(
+                    context,
+                    SlidePageRoute(
+                      builder: (context) => MeetingVideoConferenceView(
+                        meetingId: meetingId,
+                        meetingTitle: meetingTitle ?? 'Instant Call',
+                        selectedCamera: result['selectedCamera'],
+                        selectedMicrophone: result['selectedMicrophone'],
+                        isInstantCall: result['isInstantCall'] == true,
+                        isInitiator: result['isInitiator'] == true,
+                        sourceUserId: result['sourceUserId'] as String?,
+                        sourceChannelId: result['sourceChannelId'] as String?,
+                      ),
+                    ),
+                  );
+                  return;
+                }
                 Navigator.push(
                   context,
                   SlidePageRoute(

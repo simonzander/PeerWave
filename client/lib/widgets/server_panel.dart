@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/server_config_native.dart';
+import '../services/socket_service_native.dart';
 import '../services/device_identity_service.dart';
 import '../services/user_profile_service.dart';
 import '../services/storage/sqlite_message_store.dart';
@@ -28,11 +30,18 @@ class _ServerPanelState extends State<ServerPanel> {
   List<ServerConfig> _servers = [];
   String? _activeServerId;
   UnreadMessagesProvider? _unreadProvider;
+  Timer? _statusTimer;
+  Map<String, _ServerConnectionStatus> _statusCache = {};
 
   @override
   void initState() {
     super.initState();
     _loadServers();
+    _refreshStatusIfChanged();
+    _statusTimer = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => _refreshStatusIfChanged(),
+    );
   }
 
   @override
@@ -49,8 +58,23 @@ class _ServerPanelState extends State<ServerPanel> {
 
   @override
   void dispose() {
+    _statusTimer?.cancel();
     _unreadProvider?.removeListener(_updateActiveServerBadge);
     super.dispose();
+  }
+
+  _ServerConnectionStatus _getServerStatus(String serverId) {
+    final socketService = SocketService.instance;
+    if (socketService.isServerAuthError(serverId)) {
+      return _ServerConnectionStatus.authError;
+    }
+    if (socketService.isServerConnecting(serverId)) {
+      return _ServerConnectionStatus.connecting;
+    }
+    if (socketService.isServerConnected(serverId)) {
+      return _ServerConnectionStatus.connected;
+    }
+    return _ServerConnectionStatus.offline;
   }
 
   void _updateActiveServerBadge() {
@@ -79,6 +103,8 @@ class _ServerPanelState extends State<ServerPanel> {
       _activeServerId = newActiveId;
     });
 
+    _refreshStatusIfChanged();
+
     // Load server metadata (name and picture) for all servers - batch update
     final futures = <Future>[];
     for (final server in _servers) {
@@ -105,6 +131,29 @@ class _ServerPanelState extends State<ServerPanel> {
         });
       }
     });
+  }
+
+  void _refreshStatusIfChanged() {
+    if (!mounted) return;
+    final servers = ServerConfigService.getAllServers();
+    final nextStatus = <String, _ServerConnectionStatus>{};
+    var changed = servers.length != _statusCache.length;
+
+    for (final server in servers) {
+      final status = _getServerStatus(server.id);
+      nextStatus[server.id] = status;
+      if (!changed && _statusCache[server.id] != status) {
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      setState(() {
+        _statusCache = nextStatus;
+      });
+    } else {
+      _statusCache = nextStatus;
+    }
   }
 
   Future<void> _switchServer(String serverId) async {
@@ -412,6 +461,8 @@ class _ServerPanelState extends State<ServerPanel> {
                 final server = _servers[index];
                 final isActive = server.id == _activeServerId;
                 final hasUnread = server.unreadCount > 0;
+                final status =
+                    _statusCache[server.id] ?? _getServerStatus(server.id);
 
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
@@ -419,6 +470,7 @@ class _ServerPanelState extends State<ServerPanel> {
                     server: server,
                     isActive: isActive,
                     hasUnread: hasUnread,
+                    status: status,
                     onTap: () => _switchServer(server.id),
                     onLongPress: () => _showServerMenu(context, server),
                   ),
@@ -459,6 +511,7 @@ class _ServerIcon extends StatelessWidget {
   final ServerConfig server;
   final bool isActive;
   final bool hasUnread;
+  final _ServerConnectionStatus status;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
@@ -466,6 +519,7 @@ class _ServerIcon extends StatelessWidget {
     required this.server,
     required this.isActive,
     required this.hasUnread,
+    required this.status,
     required this.onTap,
     required this.onLongPress,
   });
@@ -518,8 +572,13 @@ class _ServerIcon extends StatelessWidget {
             ),
           ),
 
-          // Notification badge
-          if (hasUnread)
+          if (status != _ServerConnectionStatus.connected)
+            Positioned(
+              right: 8,
+              top: 0,
+              child: _buildStatusIcon(context, status),
+            )
+          else if (hasUnread)
             Positioned(
               right: 8,
               top: 0,
@@ -552,6 +611,36 @@ class _ServerIcon extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+
+  Widget _buildStatusIcon(
+    BuildContext context,
+    _ServerConnectionStatus status,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final icon = switch (status) {
+      _ServerConnectionStatus.connecting => Icons.sync,
+      _ServerConnectionStatus.offline => Icons.close,
+      _ServerConnectionStatus.authError => Icons.warning_amber_rounded,
+      _ServerConnectionStatus.connected => Icons.check,
+    };
+    final color = switch (status) {
+      _ServerConnectionStatus.connecting => colorScheme.secondary,
+      _ServerConnectionStatus.offline => colorScheme.error,
+      _ServerConnectionStatus.authError => colorScheme.error,
+      _ServerConnectionStatus.connected => colorScheme.tertiary,
+    };
+
+    return Container(
+      width: 20,
+      height: 20,
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        shape: BoxShape.circle,
+        border: Border.all(color: colorScheme.surface, width: 1.5),
+      ),
+      child: Center(child: Icon(icon, size: 12, color: color)),
     );
   }
 
@@ -624,6 +713,8 @@ class _ServerIcon extends StatelessWidget {
     );
   }
 }
+
+enum _ServerConnectionStatus { connected, connecting, offline, authError }
 
 /// Add server button
 class _AddServerButton extends StatelessWidget {

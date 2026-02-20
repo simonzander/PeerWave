@@ -7,10 +7,13 @@ import '../widgets/adaptive/adaptive_scaffold.dart';
 import '../widgets/navigation_badge.dart';
 import '../widgets/sync_progress_banner.dart';
 import '../widgets/server_panel.dart';
-import '../widgets/initialization_overlay.dart';
 import '../widgets/app_drawer.dart';
 import '../services/server_connection_service.dart';
 import '../services/post_login_init_service.dart';
+import '../services/socket_service.dart'
+    if (dart.library.io) '../services/socket_service_native.dart';
+import '../services/server_config_web.dart'
+    if (dart.library.io) '../services/server_config_native.dart';
 import '../config/layout_config.dart';
 import 'package:go_router/go_router.dart';
 
@@ -27,6 +30,7 @@ class _AppLayoutState extends State<AppLayout> {
   StreamSubscription<bool>? _connectionSubscription;
   bool _lastKnownConnectionStatus = true;
   bool _showServerError = false;
+  Timer? _activeServerStatusTimer;
 
   @override
   void initState() {
@@ -39,9 +43,7 @@ class _AppLayoutState extends State<AppLayout> {
           .isConnectedStream
           .listen((isConnected) {
             if (mounted) {
-              setState(() {
-                _showServerError = !isConnected;
-              });
+              _updateActiveServerConnectionStatus();
             }
 
             if (!isConnected && _lastKnownConnectionStatus) {
@@ -56,13 +58,43 @@ class _AppLayoutState extends State<AppLayout> {
               );
             }
           });
+
+      _activeServerStatusTimer = Timer.periodic(
+        const Duration(seconds: 2),
+        (_) => _updateActiveServerConnectionStatus(),
+      );
     }
   }
 
   @override
   void dispose() {
     _connectionSubscription?.cancel();
+    _activeServerStatusTimer?.cancel();
     super.dispose();
+  }
+
+  void _updateActiveServerConnectionStatus() {
+    if (kIsWeb) return;
+    final activeServer = ServerConfigService.getActiveServer();
+    if (activeServer == null) {
+      if (_showServerError) {
+        setState(() {
+          _showServerError = false;
+        });
+      }
+      return;
+    }
+
+    final socketService = SocketService.instance;
+    final isConnecting = socketService.isServerConnecting(activeServer.id);
+    final isConnected = socketService.isServerConnected(activeServer.id);
+    final shouldShowError = !isConnected && !isConnecting;
+
+    if (shouldShowError != _showServerError) {
+      setState(() {
+        _showServerError = shouldShowError;
+      });
+    }
   }
 
   @override
@@ -321,7 +353,7 @@ class _AppLayoutState extends State<AppLayout> {
 
   @override
   Widget build(BuildContext context) {
-    return InitializationOverlay(child: _buildContent(context));
+    return _buildContent(context);
   }
 
   Widget _buildContent(BuildContext context) {

@@ -33,6 +33,7 @@ const { deviceSockets, getDeviceSockets } = require('./utils/deviceSockets');
 const {
   normalizePagination,
   fetchPendingMessagesForDevice,
+  fetchPendingMessagesForDeviceV2,
 } = require('./services/pendingMessagesService');
 
 // ==================== SECURITY: FORMAT STRING SANITIZATION ====================
@@ -901,21 +902,7 @@ io.sockets.on("connection", socket => {
         logger.debug(`[SIGNAL SERVER] DeviceKey: ${deviceKey}`);
         logger.info(`[SIGNAL SERVER] ✅ Socket registered in deviceSockets - deviceKey: ${deviceKey}, socketId: ${socket.id}`);
         
-        // Register user as online in presence service
-        presenceService.onSocketConnected(session.user_id, socket.id).then(status => {
-          logger.info(`[PRESENCE] User connected with status: ${status}`);
-          logger.debug(`[PRESENCE] User: ${session.user_id}`);
-          // Broadcast online status to other users
-          socket.broadcast.emit('presence:update', {
-            user_id: session.user_id,
-            status: status,
-            last_seen: new Date()
-          });
-          logger.info('[PRESENCE] Broadcasted presence:update');
-          logger.debug(`[PRESENCE] User: ${session.user_id}`);
-        }).catch(err => {
-          logger.error('[PRESENCE] Error registering socket connection', err);
-        });
+        socket.data.presenceRegistered = false;
         
         return socket.emit("authenticated", { 
           authenticated: true,
@@ -955,21 +942,7 @@ io.sockets.on("connection", socket => {
         socket.data.userId = socket.handshake.session.uuid;
         socket.data.deviceId = socket.handshake.session.deviceId;
         
-        // Register user as online in presence service
-        presenceService.onSocketConnected(socket.handshake.session.uuid, socket.id).then(status => {
-          logger.info(`[PRESENCE] User connected with status: ${status}`);
-          logger.debug(`[PRESENCE] User: ${socket.handshake.session.uuid}`);
-          // Broadcast online status to other users
-          socket.broadcast.emit('presence:update', {
-            user_id: socket.handshake.session.uuid,
-            status: status,
-            last_seen: new Date()
-          });
-          logger.info('[PRESENCE] Broadcasted presence:update');
-          logger.debug(`[PRESENCE] User: ${socket.handshake.session.uuid}`);
-        }).catch(err => {
-          logger.error('[PRESENCE] Error registering socket connection', err);
-        });
+        socket.data.presenceRegistered = false;
         
         socket.emit("authenticated", { 
           authenticated: true,
@@ -1002,6 +975,24 @@ io.sockets.on("connection", socket => {
     socket.clientReady = true;
     logger.info(`[SIGNAL SERVER] Socket marked as ready for events`);
     logger.debug(`[SIGNAL SERVER] Socket: ${socket.id}`);
+
+    if (isAuthenticated() && !socket.data.presenceRegistered) {
+      const userId = getUserId();
+      presenceService.onSocketConnected(userId, socket.id).then(status => {
+        socket.data.presenceRegistered = true;
+        logger.info(`[PRESENCE] User connected with status: ${status}`);
+        logger.debug(`[PRESENCE] User: ${userId}`);
+        socket.broadcast.emit('presence:update', {
+          user_id: userId,
+          status: status,
+          last_seen: new Date()
+        });
+        logger.info('[PRESENCE] Broadcasted presence:update');
+        logger.debug(`[PRESENCE] User: ${userId}`);
+      }).catch(err => {
+        logger.error('[PRESENCE] Error registering socket connection', err);
+      });
+    }
     
     // 🚀 Flush any pending messages that were queued while client was initializing
     if (isAuthenticated()) {
@@ -1086,12 +1077,65 @@ io.sockets.on("connection", socket => {
     }
   };
 
+  const fetchPendingMessagesV2 = async (data, sourceEvent) => {
+    try {
+      if (!isAuthenticated()) {
+        logger.error(`[SIGNAL SERVER] ${sourceEvent} blocked - not authenticated`);
+        socket.emit("fetchPendingMessagesError", { error: 'Not authenticated' });
+        return;
+      }
+
+      const userId = getUserId();
+      const deviceId = getDeviceId();
+      const { limit, offset } = normalizePagination({
+        rawLimit: data?.limit ?? data?.batchSize ?? 20,
+        rawOffset: data?.offset ?? 0,
+        defaultLimit: 20,
+      });
+
+      logger.info(
+        `[SIGNAL SERVER] Fetching pending messages v2 (${sourceEvent}): limit=${limit}, offset=${offset}`,
+      );
+      logger.debug(`[SIGNAL SERVER] User: ${sanitizeForLog(userId)}, Device: ${sanitizeForLog(deviceId)}`);
+
+      const { responseItems, hasMore } = await fetchPendingMessagesForDeviceV2({
+        userId,
+        deviceId,
+        limit,
+        offset,
+      });
+
+      logger.info(
+        `[SIGNAL SERVER] Found ${responseItems.length} pending messages v2 (hasMore: ${hasMore})`,
+      );
+
+      socket.emit("pendingMessagesResponse", {
+        items: responseItems,
+        messages: responseItems,
+        hasMore,
+        offset,
+        total: responseItems.length,
+      });
+    } catch (error) {
+      logger.error('[SIGNAL SERVER] Error fetching pending messages v2', error);
+      socket.emit("fetchPendingMessagesError", { error: error.message });
+    }
+  };
+
   socket.on("fetchPendingMessages", async (data) => {
     await fetchPendingMessages(data, 'fetchPendingMessages');
   });
 
   socket.on("requestPendingMessages", async (data) => {
     await fetchPendingMessages(data, 'requestPendingMessages');
+  });
+
+  socket.on("fetchPendingMessagesV2", async (data) => {
+    await fetchPendingMessagesV2(data, 'fetchPendingMessagesV2');
+  });
+
+  socket.on("requestPendingMessagesV2", async (data) => {
+    await fetchPendingMessagesV2(data, 'requestPendingMessagesV2');
   });
 
   // SIGNAL HANDLE START
@@ -3189,7 +3233,7 @@ io.sockets.on("connection", socket => {
         
         // Check if user is creator, participant, invited, or the source_user (person being called in 1:1)
         const isCreator = meeting.created_by === userId;
-        const isParticipant = meeting.participants && meeting.participants.some(p => p.uuid === userId);
+        const isParticipant = meeting.participants && meeting.participants.some(p => p.user_id === userId);
         const isInvited = meeting.invited_participants && meeting.invited_participants.includes(userId);
         const isSourceUser = meeting.source_user_id === userId; // Person being called in 1:1 instant call
         
@@ -3302,8 +3346,9 @@ io.sockets.on("connection", socket => {
 
         // Check if user is participant
         const isParticipant = meeting.created_by === userId ||
-                             meeting.participants?.some(p => p.user_id === userId) ||
-                             meeting.invited_participants?.includes(userId);
+                 meeting.participants?.some(p => p.user_id === userId) ||
+                 meeting.invited_participants?.includes(userId) ||
+                 meeting.source_user_id === userId;
 
         if (!isParticipant) {
           logger.error('[VIDEO PARTICIPANTS] User not participant of meeting');
@@ -4091,7 +4136,7 @@ io.sockets.on("connection", socket => {
             callerName: callerName,
             meetingId: meeting_id,
             callType: meeting.is_instant_call ? 'instant' : 'scheduled',
-            channelId: meeting.channel_id || null,
+            channelId: meeting.source_channel_id || meeting.channel_id || null,
             channelName: meeting.title || 'Call',
             timestamp: new Date().toISOString(),
           };
@@ -4227,24 +4272,26 @@ io.sockets.on("connection", socket => {
     
     // Handle meeting/call participant disconnect
     if (userId) {
-      // Unregister socket from presence service
-      presenceService.onSocketDisconnected(userId, socket.id).then(status => {
-        // Broadcast status update
-        if (status === 'offline') {
-          socket.broadcast.emit('presence:user_disconnected', {
-            user_id: userId,
-            last_seen: new Date()
-          });
-        } else {
-          socket.broadcast.emit('presence:update', {
-            user_id: userId,
-            status: status,
-            last_seen: new Date()
-          });
-        }
-      }).catch(err => {
-        logger.error('[PRESENCE] Error unregistering socket', err);
-      });
+      if (socket.data.presenceRegistered) {
+        // Unregister socket from presence service
+        presenceService.onSocketDisconnected(userId, socket.id).then(status => {
+          // Broadcast status update
+          if (status === 'offline') {
+            socket.broadcast.emit('presence:user_disconnected', {
+              user_id: userId,
+              last_seen: new Date()
+            });
+          } else {
+            socket.broadcast.emit('presence:update', {
+              user_id: userId,
+              status: status,
+              last_seen: new Date()
+            });
+          }
+        }).catch(err => {
+          logger.error('[PRESENCE] Error unregistering socket', err);
+        });
+      }
       
       // Handle instant call cleanup (WebSocket-based)
       meetingCleanupService.handleParticipantDisconnect(userId).catch(err => {
