@@ -53,6 +53,19 @@ class MeetingService {
       max_participants = null
     } = data;
 
+    const normalizedInvited = Array.isArray(invited_participants)
+      ? [...invited_participants]
+      : [];
+
+    if (
+      is_instant_call &&
+      source_user_id &&
+      source_user_id !== created_by &&
+      !normalizedInvited.includes(source_user_id)
+    ) {
+      normalizedInvited.push(source_user_id);
+    }
+
     // Generate meeting ID with appropriate prefix
     const prefix = is_instant_call ? 'call_' : 'mtg_';
     const meeting_id = prefix + uuidv4().replace(/-/g, '').substring(0, 12);
@@ -70,7 +83,7 @@ class MeetingService {
       is_instant_call,
       allow_external,
       invitation_token,
-      invited_participants,
+      invited_participants: normalizedInvited,
       voice_only,
       mute_on_join,
       // Runtime state
@@ -559,6 +572,10 @@ class MeetingService {
    * @returns {Promise<boolean>} Success
    */
   async updateParticipantStatus(meeting_id, user_id, device_id, status) {
+    if (status === undefined && typeof device_id === 'string') {
+      status = device_id;
+      device_id = undefined;
+    }
     try {
       const meeting = meetingMemoryStore.get(meeting_id);
       if (!meeting) {
