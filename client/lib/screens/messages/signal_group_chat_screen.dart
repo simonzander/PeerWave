@@ -28,6 +28,7 @@ import '../channel/channel_members_screen.dart';
 import '../channel/channel_settings_screen.dart';
 import '../../views/video_conference_prejoin_view.dart';
 import '../../views/video_conference_view.dart';
+import '../../views/meeting_video_conference_view.dart';
 
 /// Whitelist of message types that should be displayed in UI
 const Set<String> displayableMessageTypes = {
@@ -1139,6 +1140,26 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
               if (result != null &&
                   result is Map &&
                   result['hasE2EEKey'] == true) {
+                final meetingId = result['channelId'] as String?;
+                final meetingTitle = result['channelName'] as String?;
+                if (meetingId != null && meetingId.startsWith('call_')) {
+                  Navigator.push(
+                    context,
+                    SlidePageRoute(
+                      builder: (context) => MeetingVideoConferenceView(
+                        meetingId: meetingId,
+                        meetingTitle: meetingTitle ?? 'Instant Call',
+                        selectedCamera: result['selectedCamera'],
+                        selectedMicrophone: result['selectedMicrophone'],
+                        isInstantCall: result['isInstantCall'] == true,
+                        isInitiator: result['isInitiator'] == true,
+                        sourceUserId: result['sourceUserId'] as String?,
+                        sourceChannelId: result['sourceChannelId'] as String?,
+                      ),
+                    ),
+                  );
+                  return;
+                }
                 Navigator.push(
                   context,
                   SlidePageRoute(

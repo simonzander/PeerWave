@@ -27,6 +27,7 @@ import '../../extensions/snackbar_extensions.dart';
 import '../../providers/unread_messages_provider.dart';
 import '../../views/video_conference_prejoin_view.dart';
 import '../../views/video_conference_view.dart';
+import '../../views/meeting_video_conference_view.dart';
 import '../../widgets/animated_widgets.dart';
 import '../../services/api_service.dart';
 import '../../services/server_settings_service.dart';
@@ -1299,6 +1300,26 @@ class _DirectMessagesScreenState extends State<DirectMessagesScreen> {
               if (result != null &&
                   result is Map &&
                   result['hasE2EEKey'] == true) {
+                final meetingId = result['channelId'] as String?;
+                final meetingTitle = result['channelName'] as String?;
+                if (meetingId != null && meetingId.startsWith('call_')) {
+                  Navigator.push(
+                    context,
+                    SlidePageRoute(
+                      builder: (context) => MeetingVideoConferenceView(
+                        meetingId: meetingId,
+                        meetingTitle: meetingTitle ?? 'Instant Call',
+                        selectedCamera: result['selectedCamera'],
+                        selectedMicrophone: result['selectedMicrophone'],
+                        isInstantCall: result['isInstantCall'] == true,
+                        isInitiator: result['isInitiator'] == true,
+                        sourceUserId: result['sourceUserId'] as String?,
+                        sourceChannelId: result['sourceChannelId'] as String?,
+                      ),
+                    ),
+                  );
+                  return;
+                }
                 Navigator.push(
                   context,
                   SlidePageRoute(

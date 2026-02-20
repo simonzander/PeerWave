@@ -9,6 +9,7 @@ import '../../screens/dashboard/channels_list_view.dart';
 import '../../screens/messages/signal_group_chat_screen.dart';
 import '../../views/video_conference_prejoin_view.dart';
 import '../../views/video_conference_view.dart';
+import '../../views/meeting_video_conference_view.dart';
 import '../../services/event_bus.dart';
 import '../../services/video_conference_service.dart';
 import '../../services/api_service.dart';
@@ -263,14 +264,31 @@ class _ChannelsViewPageState extends BaseViewState<ChannelsViewPage> {
 
         if (alreadyInThisChannel || _videoConferenceConfig != null) {
           // Show actual video conference view (already joined or joining)
+          final channelId =
+              _videoConferenceConfig?['channelId'] ??
+              widget.initialChannelUuid!;
+          final channelName =
+              _videoConferenceConfig?['channelName'] ??
+              widget.initialChannelName ??
+              'Channel';
+
+          if (channelId.startsWith('call_')) {
+            return MeetingVideoConferenceView(
+              meetingId: channelId,
+              meetingTitle: channelName,
+              selectedCamera: _videoConferenceConfig?['selectedCamera'],
+              selectedMicrophone: _videoConferenceConfig?['selectedMicrophone'],
+              isInstantCall: _videoConferenceConfig?['isInstantCall'] == true,
+              isInitiator: _videoConferenceConfig?['isInitiator'] == true,
+              sourceUserId: _videoConferenceConfig?['sourceUserId'] as String?,
+              sourceChannelId:
+                  _videoConferenceConfig?['sourceChannelId'] as String?,
+            );
+          }
+
           return VideoConferenceView(
-            channelId:
-                _videoConferenceConfig?['channelId'] ??
-                widget.initialChannelUuid!,
-            channelName:
-                _videoConferenceConfig?['channelName'] ??
-                widget.initialChannelName ??
-                'Channel',
+            channelId: channelId,
+            channelName: channelName,
             host: widget.host,
             selectedCamera: _videoConferenceConfig?['selectedCamera'],
             selectedMicrophone: _videoConferenceConfig?['selectedMicrophone'],
