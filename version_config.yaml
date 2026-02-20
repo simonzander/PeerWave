@@ -8,8 +8,8 @@ project:
 
 client:
   # Semantic versioning: MAJOR.MINOR.PATCH
-  version: "1.4.4"
-  build_number: 4
+  version: "1.4.5"
+  build_number: 5
   
   # Server compatibility range
   min_server_version: "1.4.0"
@@ -17,7 +17,7 @@ client:
 
 server:
   # Semantic versioning: MAJOR.MINOR.PATCH
-  version: "1.4.4"
+  version: "1.4.5"
   
   # Client compatibility range
   min_client_version: "1.4.0"

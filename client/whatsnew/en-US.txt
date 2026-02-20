@@ -1,8 +1,10 @@
-🚀 What's New in PeerWave v1.4.4
+🚀 What's New in PeerWave v1.4.5
 
 ✨ New Features
-• chore: update version to 1.4.3 implement pending messages fetching via http fix: auto scroll to bottom in messages
+• add MeetingVideoConferenceView for instant calls and update related screens
+• implement v2 endpoint for fetching pending messages and update version to 1.4.4
+• implement server connection status handling and remove initialization overlay
 
 🐛 Bug Fixes
-• chore: update version to 1.4.3 feat: implement pending messages fetching via http auto scroll to bottom in messages
+• instant call
 
