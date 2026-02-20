@@ -216,6 +216,7 @@ router.get('/pending-messages/v2', verifyAuthEither, async (req, res) => {
       defaultLimit: 20,
     });
     const source = req.query.source ?? 'http';
+    const safeSource = String(source).replace(/[\r\n]/g, '');
 
     const client = await Client.findOne({
       where: { clientid: clientId },
@@ -230,7 +231,7 @@ router.get('/pending-messages/v2', verifyAuthEither, async (req, res) => {
     const deviceId = client.device_id;
 
     logger.info(
-      `[SIGNAL API] Fetching pending messages v2 (${source}): limit=${limit}, offset=${offset}`,
+      `[SIGNAL API] Fetching pending messages v2 (${safeSource}): limit=${limit}, offset=${offset}`,
     );
 
     const { responseItems, hasMore, totalAvailable } =
