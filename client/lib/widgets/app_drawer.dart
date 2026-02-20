@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +7,8 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../services/server_config_web.dart'
     if (dart.library.io) '../services/server_config_native.dart';
+import '../services/socket_service.dart'
+    if (dart.library.io) '../services/socket_service_native.dart';
 import '../services/logout_service.dart';
 import '../services/storage/sqlite_message_store.dart';
 import '../providers/unread_messages_provider.dart';
@@ -29,6 +32,8 @@ class AppDrawer extends StatefulWidget {
 
 class _AppDrawerState extends State<AppDrawer> {
   UnreadMessagesProvider? _unreadProvider;
+  Timer? _statusTimer;
+  Map<String, _ServerConnectionStatus> _statusCache = {};
 
   @override
   void initState() {
@@ -40,12 +45,90 @@ class _AppDrawerState extends State<AppDrawer> {
         _unreadProvider?.addListener(_onUnreadCountsChanged);
       }
     });
+
+    _refreshStatusIfChanged();
+    _statusTimer = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => _refreshStatusIfChanged(),
+    );
   }
 
   @override
   void dispose() {
+    _statusTimer?.cancel();
     _unreadProvider?.removeListener(_onUnreadCountsChanged);
     super.dispose();
+  }
+
+  _ServerConnectionStatus _getServerStatus(String serverId) {
+    final socketService = SocketService.instance;
+    if (socketService.isServerAuthError(serverId)) {
+      return _ServerConnectionStatus.authError;
+    }
+    if (socketService.isServerConnecting(serverId)) {
+      return _ServerConnectionStatus.connecting;
+    }
+    if (socketService.isServerConnected(serverId)) {
+      return _ServerConnectionStatus.connected;
+    }
+    return _ServerConnectionStatus.offline;
+  }
+
+  void _refreshStatusIfChanged() {
+    if (!mounted || kIsWeb) return;
+    final servers = ServerConfigService.getAllServers();
+    final nextStatus = <String, _ServerConnectionStatus>{};
+    var changed = servers.length != _statusCache.length;
+
+    for (final server in servers) {
+      final status = _getServerStatus(server.id);
+      nextStatus[server.id] = status;
+      if (!changed && _statusCache[server.id] != status) {
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      setState(() {
+        _statusCache = nextStatus;
+      });
+    } else {
+      _statusCache = nextStatus;
+    }
+  }
+
+  Widget _buildStatusIcon(
+    ColorScheme colorScheme,
+    _ServerConnectionStatus status, {
+    bool isSmall = false,
+  }) {
+    final size = isSmall ? 18.0 : 20.0;
+    final iconSize = isSmall ? 11.0 : 12.0;
+    final icon = switch (status) {
+      _ServerConnectionStatus.connecting => Icons.sync,
+      _ServerConnectionStatus.offline => Icons.close,
+      _ServerConnectionStatus.authError => Icons.warning_amber_rounded,
+      _ServerConnectionStatus.connected => Icons.check,
+    };
+    final color = switch (status) {
+      _ServerConnectionStatus.connecting => colorScheme.secondary,
+      _ServerConnectionStatus.offline => colorScheme.error,
+      _ServerConnectionStatus.authError => colorScheme.error,
+      _ServerConnectionStatus.connected => colorScheme.tertiary,
+    };
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        shape: BoxShape.circle,
+        border: Border.all(color: colorScheme.surface, width: 1.5),
+      ),
+      child: Center(
+        child: Icon(icon, size: iconSize, color: color),
+      ),
+    );
   }
 
   /// Handle unread counts changes - rebuild to show updated badges
@@ -462,8 +545,18 @@ class _AppDrawerState extends State<AppDrawer> {
                   )
                 : null,
           ),
-          // Unread badge
-          if (_unreadProvider != null && activeServer != null)
+          if (activeServer != null &&
+              _getServerStatus(activeServer.id) !=
+                  _ServerConnectionStatus.connected)
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: _buildStatusIcon(
+                colorScheme,
+                _getServerStatus(activeServer.id),
+              ),
+            )
+          else if (_unreadProvider != null && activeServer != null)
             Positioned(
               right: 0,
               bottom: 0,
@@ -505,8 +598,18 @@ class _AppDrawerState extends State<AppDrawer> {
                           )
                         : null,
                   ),
-                  // Unread badge
-                  if (_unreadProvider != null)
+                  if (_getServerStatus(server.id) !=
+                      _ServerConnectionStatus.connected)
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: _buildStatusIcon(
+                        colorScheme,
+                        _getServerStatus(server.id),
+                        isSmall: true,
+                      ),
+                    )
+                  else if (_unreadProvider != null)
                     Positioned(
                       right: 0,
                       bottom: 0,
@@ -740,3 +843,5 @@ class _AppDrawerState extends State<AppDrawer> {
     );
   }
 }
+
+enum _ServerConnectionStatus { connected, connecting, offline, authError }

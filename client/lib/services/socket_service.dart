@@ -34,6 +34,7 @@ class SocketService {
   bool _connecting = false;
   bool _listenersRegistered = false; // 🔒 Track listener registration state
   bool _isConnected = false; // Internal connection state tracking
+  bool _authError = false;
 
   // Named listener storage for compatibility with native multi-server API
   // On web, we only have one socket, but we track registrations by name
@@ -57,6 +58,18 @@ class SocketService {
 
   /// Check if listeners are registered and client is ready
   bool get isReady => _listenersRegistered && (_socket?.connected ?? false);
+
+  bool isServerConnected(String serverId) {
+    return _isConnected && (_socket?.connected ?? false);
+  }
+
+  bool isServerConnecting(String serverId) {
+    return _connecting;
+  }
+
+  bool isServerAuthError(String serverId) {
+    return _authError;
+  }
 
   /// Connect to all servers (web only supports single server - this is for API compatibility)
   Future<void> connectAllServers() async {
@@ -138,6 +151,7 @@ class SocketService {
         debugPrint('[SOCKET SERVICE] Authentication response: $data');
         // Check if authentication failed
         if (data is Map && data['authenticated'] == false) {
+          _authError = true;
           // Only trigger auto-logout if user is logged in
           if (AuthService.isLoggedIn) {
             debugPrint(
@@ -153,6 +167,7 @@ class SocketService {
         }
         // Store user info in SignalService for device filtering
         if (data is Map && data['authenticated'] == true) {
+          _authError = false;
           // Store device ID from server authentication
           if (data['deviceId'] != null) {
             final deviceId = data['deviceId'] as int;
@@ -221,6 +236,7 @@ class SocketService {
       });
       // Listen for unauthorized/authentication errors
       _socket!.on('unauthorized', (_) {
+        _authError = true;
         // ❌ Report socket error (only on native)
         if (!kIsWeb) {
           ServerConnectionService.instance.reportSocketError(
@@ -244,6 +260,9 @@ class SocketService {
         // ❌ Report socket error (only on native)
         if (!kIsWeb) {
           ServerConnectionService.instance.reportSocketError(data);
+        }
+        if (data is Map && data['authenticated'] == false) {
+          _authError = true;
         }
         if (data is Map &&
             (data['message']?.toString().contains('unauthorized') ?? false)) {
