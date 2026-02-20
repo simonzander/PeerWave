@@ -81,7 +81,7 @@ dependencies:
   printing: ^5.11.0  # PDF saving and sharing
   # Native client dependencies
   qr_flutter: ^4.1.0  # QR code generation for web (magic key display)
-  mobile_scanner: ^7.1.4  # QR code scanning for native (optional)
+  mobile_scanner: ^7.2.0  # QR code scanning for native (optional)
   local_notifier: ^0.1.6  # Desktop notifications for native
   universal_html: ^2.3.0
   passkeys: ^2.8.2  # Proper WebAuthn/FIDO2 for mobile (Android/iOS)
