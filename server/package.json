@@ -24,7 +24,7 @@
     "express": "^4.22.1",
     "express-rate-limit": "^8.2.1",
     "express-session": "^1.19.0",
-    "fido2-lib": "^3.5.3",
+    "fido2-lib": "^3.5.7",
     "firebase-admin": "^13.6.1",
     "js-yaml": "^4.1.1",
     "jsonwebtoken": "^9.0.3",
