@@ -74,7 +74,7 @@ dependencies:
   flutter_local_notifications: ^20.1.0  # Android/iOS native notifications
   local_auth: ^3.0.1  # Biometric authentication (Face ID, Touch ID, fingerprint)
   just_audio: ^0.10.5
-  audioplayers: ^6.1.0  # For Windows desktop audio playback
+  audioplayers: ^6.6.0  # For Windows desktop audio playback
   audio_waveforms: ^2.0.2
   fl_chart: ^1.1.1
   pdf: ^3.10.0  # PDF generation for abuse report downloads
