@@ -45,7 +45,7 @@ dependencies:
   shared_preferences: ^2.0.6
   socket_io_client: ^3.1.4
   dio: ^5.9.2
-  cookie_jar: ^4.0.8
+  cookie_jar: ^4.0.9
   dio_cookie_manager: ^3.3.0
   web: ^1.1.1
   libsignal_protocol_dart: ^0.7.4
