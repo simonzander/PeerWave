@@ -114,7 +114,7 @@ dev_dependencies:
   integration_test:
     sdk: flutter
   mockito: ^5.4.4
-  build_runner: ^2.4.8
+  build_runner: ^2.12.2
 
 # Override passkeys_web with fixed local version that doesn't crash
 dependency_overrides:
