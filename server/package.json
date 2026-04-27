@@ -22,7 +22,7 @@
     "cors": "^2.8.6",
     "emailjs": "^4.0.3",
     "express": "^4.22.1",
-    "express-rate-limit": "^8.2.1",
+    "express-rate-limit": "^8.4.1",
     "express-session": "^1.19.0",
     "fido2-lib": "^3.5.9",
     "firebase-admin": "^13.6.1",
