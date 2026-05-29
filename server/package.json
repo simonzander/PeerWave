@@ -20,7 +20,7 @@
     "bulma-toast": "^2.4.4",
     "connect-session-sequelize": "^8.0.6",
     "cors": "^2.8.6",
-    "emailjs": "^4.0.3",
+    "emailjs": "^5.0.1",
     "express": "^4.22.1",
     "express-rate-limit": "^8.2.1",
     "express-session": "^1.19.0",
