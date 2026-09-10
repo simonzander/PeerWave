@@ -65,5 +65,8 @@
   "workbench.editor.limit.perEditorGroup": true,
   
   // Disable telemetry
-  "telemetry.telemetryLevel": "off"
+  "telemetry.telemetryLevel": "off",
+  "chat.tools.terminal.autoApprove": {
+    "flutter": true
+  }
 }
