@@ -28,6 +28,15 @@ mixin GroupMessagingMixin {
   // (needed for sender key distribution)
   SessionManager get sessionStore;
 
+  // Required from OneToOneMessagingMixin for targeted sender-key fallback
+  Future<String> send1to1Message({
+    required String recipientUserId,
+    required String type,
+    required String payload,
+    String? itemId,
+    int? targetDeviceId,
+  });
+
   // Queue for messages waiting on sender keys
   // Key: "groupId:senderId:deviceId", Value: List of pending messages
   static final Map<String, List<Map<String, dynamic>>>
@@ -212,8 +221,8 @@ mixin GroupMessagingMixin {
       for (final memberData in memberList) {
         final memberId = memberData['userId'] as String;
 
-        // Skip own user
-        if (memberId == currentUserId) continue;
+        // Include own user to sync sender keys to our other devices.
+        // Current sending device is filtered out below.
 
         // Get device IDs for this member
         var deviceIds = await sessionStore.getDeviceIdsForUser(memberId);
@@ -243,49 +252,55 @@ mixin GroupMessagingMixin {
         }
 
         for (final deviceId in deviceIds) {
-          // Check if we have their sender key
+          // Skip only the current device (it already has our sender key locally).
+          if (memberId == currentUserId && deviceId == currentDeviceId) {
+            continue;
+          }
+
+          // Check if we have their sender key (for diagnostics/reasoning).
           final memberAddress = SignalProtocolAddress(memberId, deviceId);
           final memberSenderKeyName = SenderKeyName(groupId, memberAddress);
           final weHaveTheirKey = await senderKeyStore.containsSenderKey(
             memberSenderKeyName,
           );
 
-          if (!weHaveTheirKey || force) {
-            // We don't have their key, or force=true: send ours (with optional deduplication)
-            final dedupeKey = '$groupId:$memberId:$deviceId';
-            final lastSent = _lastSenderKeySentToDevice[dedupeKey];
+          // Proactively share our sender key with deduplication.
+          // This heals asymmetric key state (they may lose our key while we still have theirs).
+          final dedupeKey = '$groupId:$memberId:$deviceId';
+          final lastSent = _lastSenderKeySentToDevice[dedupeKey];
 
-            if (!force &&
-                lastSent != null &&
-                now.difference(lastSent).inHours < 1) {
-              debugPrint(
-                '[GROUP]   ⏭️ Skip $memberId:$deviceId (sent ${now.difference(lastSent).inMinutes}m ago)',
-              );
-              continue;
-            }
-
-            final reason = force ? 'forced redistribution' : 'we need theirs';
+          if (!force &&
+              lastSent != null &&
+              now.difference(lastSent).inHours < 1) {
             debugPrint(
-              '[GROUP]   → Sending sender key to $memberId:$deviceId ($reason)',
+              '[GROUP]   ⏭️ Skip $memberId:$deviceId (sent ${now.difference(lastSent).inMinutes}m ago)',
             );
-
-            tasks.add(() async {
-              try {
-                await _sendSenderKeyToDevice(
-                  groupId,
-                  memberId,
-                  deviceId,
-                  applyDeviceCap: applyDeviceCap,
-                );
-                _lastSenderKeySentToDevice[dedupeKey] = now;
-                debugPrint('[GROUP]   ✓ Sent to $memberId:$deviceId');
-              } catch (e) {
-                debugPrint(
-                  '[GROUP]   ⚠️ Failed to send to $memberId:$deviceId: $e',
-                );
-              }
-            });
+            continue;
           }
+
+          final reason = force
+              ? 'forced redistribution'
+              : (weHaveTheirKey ? 'proactive refresh' : 'we need theirs');
+          debugPrint(
+            '[GROUP]   → Sending sender key to $memberId:$deviceId ($reason)',
+          );
+
+          tasks.add(() async {
+            try {
+              await _sendSenderKeyToDevice(
+                groupId,
+                memberId,
+                deviceId,
+                applyDeviceCap: applyDeviceCap,
+              );
+              _lastSenderKeySentToDevice[dedupeKey] = now;
+              debugPrint('[GROUP]   ✓ Sent to $memberId:$deviceId');
+            } catch (e) {
+              debugPrint(
+                '[GROUP]   ⚠️ Failed to send to $memberId:$deviceId: $e',
+              );
+            }
+          });
         }
       }
 
@@ -357,11 +372,7 @@ mixin GroupMessagingMixin {
           '[GROUP]   currentUserId=$currentUserId, memberId=$memberId, equal=${memberId == currentUserId}',
         );
 
-        // Skip ALL of our own devices (multi-device support)
-        if (memberId == currentUserId) {
-          debugPrint('[GROUP]   Skipping own user (all devices)');
-          continue;
-        }
+        // Include own user so our other devices also receive sender keys.
 
         // Step 3: Get device IDs from local session storage
         var deviceIds = await sessionStore.getDeviceIdsForUser(memberId);
@@ -410,6 +421,14 @@ mixin GroupMessagingMixin {
         // - Returns SignalMessage if session exists
         // This bundles session establishment with sender key distribution!
         for (final deviceId in deviceIds) {
+          // Skip only current sending device; sync to our other devices.
+          if (memberId == currentUserId && deviceId == currentDeviceId) {
+            debugPrint(
+              '[GROUP]     Skipping current device $memberId:$deviceId',
+            );
+            continue;
+          }
+
           tasks.add(() async {
             try {
               debugPrint('[GROUP]     Distributing to $memberId:$deviceId');
@@ -760,11 +779,27 @@ mixin GroupMessagingMixin {
     String userId,
     int deviceId,
   ) async {
-    socketService.emit('requestSenderKey', {
-      'groupId': groupId,
-      'userId': userId,
-      'deviceId': deviceId,
-    });
+    // Legacy socket event removed on server side.
+    // Use targeted 1-to-1 Signal message so requests still work when sender key is missing.
+    final requestId = const Uuid().v4();
+    await send1to1Message(
+      recipientUserId: userId,
+      targetDeviceId: deviceId,
+      type: 'sender_key_request',
+      itemId: requestId,
+      payload: jsonEncode({
+        'requesterId': currentUserId,
+        'requesterDeviceId': currentDeviceId,
+        'targetUserId': userId,
+        'targetDeviceId': deviceId,
+        'groupId': groupId,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      }),
+    );
+
+    debugPrint(
+      '[GROUP] Fallback sender key request sent via 1-to-1 to $userId:$deviceId for group $groupId',
+    );
   }
 
   /// Re-request sender keys for queued messages (best-effort, in-memory only).
@@ -952,10 +987,16 @@ mixin GroupMessagingMixin {
   /// - [requestData]: Decoded request message containing requester info
   Future<void> handleSenderKeyRequest(Map<String, dynamic> requestData) async {
     final String requesterId = requestData['requesterId'] as String;
-    final int requesterDeviceId = requestData['requesterDeviceId'] as int;
+    final requesterDeviceIdRaw = requestData['requesterDeviceId'];
+    final int requesterDeviceId = requesterDeviceIdRaw is int
+        ? requesterDeviceIdRaw
+        : int.tryParse(requesterDeviceIdRaw.toString()) ?? 0;
     final String groupId = requestData['groupId'] as String;
     final String targetUserId = requestData['targetUserId'] as String;
-    final int targetDeviceId = requestData['targetDeviceId'] as int;
+    final targetDeviceIdRaw = requestData['targetDeviceId'];
+    final int targetDeviceId = targetDeviceIdRaw is int
+        ? targetDeviceIdRaw
+        : int.tryParse(targetDeviceIdRaw.toString()) ?? 0;
 
     debugPrint(
       '[GROUP] 📨 Sender key request received from $requesterId:$requesterDeviceId',

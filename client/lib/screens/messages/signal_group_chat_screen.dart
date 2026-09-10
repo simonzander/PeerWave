@@ -341,7 +341,9 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         }
       }
 
-      // Create and upload our sender key if not already done
+      // Proactive sender-key share on channel open/join.
+      // This guarantees our sender key is (re)distributed for text channels,
+      // including our other devices, before normal messaging flow starts.
       final hasSenderKey = await signalClient.messagingService.hasSenderKey(
         widget.channelUuid,
         currentUserId,
@@ -350,18 +352,23 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
 
       if (!hasSenderKey) {
         debugPrint(
-          '[SIGNAL_GROUP] Creating and uploading sender key for group ${widget.channelUuid}',
+          '[SIGNAL_GROUP] No local sender key yet - creating + force distributing for ${widget.channelUuid}',
         );
-
-        // Create and distribute sender key (includes server upload via socket)
-        await signalClient.messagingService.createAndDistributeSenderKey(
-          widget.channelUuid,
-        );
-
-        debugPrint('[SIGNAL_GROUP] Sender key uploaded to server successfully');
       } else {
-        debugPrint('[SIGNAL_GROUP] Sender key already exists');
+        debugPrint(
+          '[SIGNAL_GROUP] Sender key exists - force redistributing on channel open for ${widget.channelUuid}',
+        );
       }
+
+      await signalClient.messagingService.ensureSenderKeyForGroup(
+        widget.channelUuid,
+        force: true,
+        applyDeviceCap: true,
+      );
+
+      debugPrint(
+        '[SIGNAL_GROUP] ✓ Proactive sender key distribution complete for ${widget.channelUuid}',
+      );
 
       // Load ALL sender keys for this channel from server (batch load)
       debugPrint(
@@ -662,9 +669,9 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
         return;
       }
 
-      // TODO: Implement markGroupItemAsRead on SignalClient
-      // For now, send directly via socket
-      SocketService.instance.emit('markGroupItemAsRead', {'itemId': itemId});
+      final signalClient = await ServerSettingsService.instance
+          .getOrCreateSignalClientWithStoredCredentials();
+      signalClient.messagingService.markGroupItemAsRead(itemId);
       _pendingReadReceipts.remove(itemId);
       debugPrint('[SIGNAL_GROUP] Sent read receipt for item: $itemId');
 
@@ -765,8 +772,6 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
     }
 
     try {
-      final currentUserId = UserProfileService.instance.currentUserUuid ?? '';
-
       // ✅ ONLY load from local storage
       // SignalClient listeners handle all decryption and storage
       final groupMessageStore = await SqliteGroupMessageStore.getInstance();
@@ -932,11 +937,10 @@ class _SignalGroupChatScreenState extends State<SignalGroupChatScreen> {
             duration: const Duration(seconds: 5),
           );
         }
-        return; // ❌ BLOCK - Critical initialization error
+        return; // ❌ BLOCK - initialization error
       }
 
-      // TODO: Implement sender key check on SignalClient
-      // For now, assume keys are set up during initialization
+      // Sender key readiness is handled by messagingService.sendGroupItem()
 
       // Add optimistic message to UI
       setState(() {

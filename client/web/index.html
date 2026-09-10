@@ -31,9 +31,106 @@
 
   <title>peerwave_client</title>
   <link rel="manifest" href="manifest.json">
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            background: #0f1115;
+            color: #e6e6e6;
+            font-family: "Segoe UI", "Noto Sans", "Arial", sans-serif;
+        }
+        #boot-splash {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(1200px 800px at 20% 10%, #1d2330 0%, #0f1115 55%, #0b0c10 100%);
+            z-index: 9999;
+        }
+        #boot-splash .card {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 24px 28px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            background: rgba(18, 20, 26, 0.75);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+            backdrop-filter: blur(8px);
+        }
+        #boot-splash img {
+            width: 56px;
+            height: 56px;
+        }
+        #boot-splash .title {
+            font-size: 22px;
+            letter-spacing: 0.4px;
+            margin: 0 0 4px 0;
+        }
+        #boot-splash .subtitle {
+            font-size: 13px;
+            opacity: 0.7;
+            margin: 0;
+        }
+        #boot-splash .spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255, 255, 255, 0.25);
+            border-top-color: #7dd3fc;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 6px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
 </head>
 <body>
+    <div id="boot-splash" aria-live="polite" aria-label="Loading">
+        <div class="card">
+            <img src="assets/assets/images/peerwave.png" alt="PeerWave" />
+            <div>
+                <div class="title">PeerWave</div>
+                <div class="subtitle">Loading app<span class="spinner" aria-hidden="true"></span></div>
+            </div>
+        </div>
+    </div>
   <script src="flutter_bootstrap.js" async></script>
+    <script>
+        (function () {
+            var splash = document.getElementById('boot-splash');
+            if (!splash) return;
+
+            function hideSplash() {
+                if (!splash) return;
+                splash.style.opacity = '0';
+                splash.style.pointerEvents = 'none';
+                setTimeout(function () {
+                    if (splash && splash.parentNode) {
+                        splash.parentNode.removeChild(splash);
+                    }
+                }, 250);
+                splash = null;
+            }
+
+            // Flutter emits this event after first frame in most builds.
+            window.addEventListener('flutter-first-frame', hideSplash, { once: true });
+
+            // Fallback: hide once Flutter inserts its root element.
+            var checkCount = 0;
+            var checkTimer = setInterval(function () {
+                checkCount += 1;
+                if (document.querySelector('flt-glass-pane')) {
+                    clearInterval(checkTimer);
+                    hideSplash();
+                } else if (checkCount > 200) {
+                    clearInterval(checkTimer);
+                }
+            }, 50);
+        })();
+    </script>
   <script>
     // Helper functions for URL-safe base64 encoding and decoding
     function base64UrlEncode(buffer) {

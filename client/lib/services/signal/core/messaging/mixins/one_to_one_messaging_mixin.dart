@@ -167,6 +167,8 @@ mixin OneToOneMessagingMixin {
         'read_receipt',
         'delivery_receipt',
         'senderKeyRequest',
+        'sender_key_request',
+        'sender_key_response',
         'fileKeyRequest',
         'signal:senderKeyDistribution',
         'signal:session_reset_request',
